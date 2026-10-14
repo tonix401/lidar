@@ -15,7 +15,7 @@ Neural detectors (PointPillars, RangeNet++) were rejected: they are trained on 6
 
 ## What is implemented
 
-The "Object detection" stage in the Objects panel section:
+The "Object detection" stage in the Processing panel section:
 
 1. **Slow background.** Each beam learns the range of the empty scene.
    - A nearer surface is adopted only after `learn` s (20 s); a farther one (the background revealed) after 0.3 s.
@@ -33,9 +33,12 @@ The "Object detection" stage in the Objects panel section:
 
 ## Display
 
-- Highlight colours each object; the background is dimmed.
-- 3D boxes, labels and trails; the same overlays on the 2D map and range image.
-- An object list; click to select; follow mode.
+- **Highlight** colours each confirmed object in its own colour (golden-ratio hue steps per id).
+  - Segmented but not yet confirmed beams are light grey.
+  - A static object is drawn paler; with a selection, the other objects are drawn at 45 %.
+- **Dim background** darkens everything else while at least one object is confirmed: towards black (12 % of the colour kept) in the dark theme, towards the background (35 % kept) in the light theme (`TintOptions.dimTo`, `ObjectDetector.tintBackground`). It only works with highlighting on.
+- 3D boxes, labels and trails; the same overlays on the 2D map; boxes and labels on the range image (no trails there).
+- An object list; click a row, a label or the object in a 2D view to select; follow mode keeps the selected object centred (3D and map).
 
 ## Measured (2026-10-14)
 
@@ -47,6 +50,11 @@ Over `rec_20261014_223527` (39 s) and `rec_20261014_185611` (16 s), one person e
 | `…185611` before → after | 1.50 → 0.03 | 12 → 1 | 100 % → 99 % | 7 → 3 | 59 → 78 % |
 
 The neighbourhood background alone took ghosts to 0.08 / 0.33 per scan, the fringe rule most of the rest.
+
+**How it was measured** (a throw-away harness, not in the repository):
+- The frontend modules (`Processor`, `ObjectDetector`) were bundled for Node with the frontend's own rolldown and fed the raw scans of a recording at its own timestamps. The auto-mode settings were re-derived every 10 scans, as on the page ([development.md](development.md#measuring-on-recordings-offline)).
+- After a 3 s warm-up, each confirmed track was compared with the ground truth regions above.
+- The same harness gave the outline and wall numbers in [pipeline.md](pipeline.md). It is worth rebuilding when a change needs numbers: the page's own Statistics box only shows one scan at a time.
 
 These two recordings are only a check: no rule or constant refers to them. Thresholds come from the measured noise (σ), the sensor geometry (beam width, layer spacing) or human size, and the unit tests (`tests/objects.test.ts`) cover scenes the recordings do not contain: a static pillar whose edges return mixed ranges plus a dark wall patch with 30 % returns (no track at all, then exactly one for a person walking in), a person at 8 m, and a small object half hidden behind a person.
 

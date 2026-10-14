@@ -11,66 +11,55 @@
 <canvas id="view2d" hidden></canvas>
 <div id="tip" hidden></div>
 <div id="panel">
-  <h1 id="title">MRS6000</h1>
-  <div class="sub" id="subtitle">connecting…</div>
+  <div class="head">
+    <div><h1 id="title">MRS6000</h1><div class="sub" id="subtitle">connecting…</div></div>
+    <button id="panelToggle" title="hide the panel (H)" aria-expanded="true">‹</button>
+  </div>
+  <div class="body">
 
-  <h2>Stream</h2>
-  <div class="row"><span><span class="dot" id="streamDot"></span>Scan rate</span><span id="rate">–</span></div>
-  <div class="row"><span>Points / scan</span><span id="points">–</span></div>
-  <div class="row"><span>Layers × beams</span><span id="geom">–</span></div>
-  <div class="row"><span>Processing</span><span id="proc">–</span></div>
-  <div class="row"><span title="3D renders per second: on demand, so ≈ scan rate with a still camera">Renders / s</span><span id="fps">–</span></div>
+  <details class="fold" id="streamBox">
+    <summary><span class="dot" id="sumStreamDot"></span>Stream <span class="val" id="sumStream">–</span></summary>
+    <div class="row"><span><span class="dot" id="streamDot"></span>Scan rate</span><span id="rate">–</span></div>
+    <div class="row"><span>Points / scan</span><span id="points">–</span></div>
+    <div class="row"><span>Layers × beams</span><span id="geom">–</span></div>
+  </details>
+  <details class="fold" id="deviceBox">
+    <summary><span class="dot" id="sumDeviceDot"></span>Device <span class="val" id="sumDevice">–</span></summary>
+    <div class="row"><span><span class="dot" id="devDot"></span>Status</span><span id="devStatus">–</span></div>
+    <div class="row"><span>System / APD temp</span><span id="temps">–</span></div>
+    <div class="row"><span>Supply</span><span id="volt">–</span></div>
+    <div class="row"><span>Mirror</span><span id="mirror">–</span></div>
+    <div class="row"><span>Window</span><span id="window">–</span></div>
+  </details>
+  <details class="fold" id="statsBox">
+    <summary>Statistics <span class="val" id="sumStats">per scan, live</span></summary>
+    <div id="statsList"></div>
+  </details>
 
-  <h2>Device</h2>
-  <div class="row"><span><span class="dot" id="devDot"></span>Status</span><span id="devStatus">–</span></div>
-  <div class="row"><span>System / APD temp</span><span id="temps">–</span></div>
-  <div class="row"><span>Supply</span><span id="volt">–</span></div>
-  <div class="row"><span>Mirror</span><span id="mirror">–</span></div>
-  <div class="row"><span>Window</span><span id="window">–</span></div>
+  <details class="sect" id="secRec" open><summary><h2>Recording &amp; replay</h2></summary>
+  <div class="row"><span><span id="srcLabel">live sensor</span> <span class="info" tabindex="0" role="button" data-tip="Record saves the live sensor stream on the server in recordings/ (zstd-compressed, about 7.5 MB per minute); it keeps recording while you watch a replay. Click a recording to play it; ⋯ has its size, download and delete.">i</span></span><button id="recBtn" >● Record</button></div>
+  <div id="recInfo" class="note2"></div>
+  <div id="recList"></div>
+  </details>
 
-  <h2>Surface</h2>
-  <div class="row"><label for="draw">Draw</label>
+  <div class="tabbar">
+    <div class="tabs" id="modeBtns">
+      <button data-mode="3d" class="on">3D</button><button data-mode="top">2D map</button><button data-mode="image">Range image</button>
+    </div>
+    <button id="pause" title="pause the live view (space)">Pause</button>
+  </div>
+
+  <details class="sect" id="secDisplay" open><summary><h2>Display <span class="info" tabindex="0" role="button" id="hint" data-tip="">i</span></h2></summary>
+  <div class="row" data-views="3d top"><label for="draw">Draw</label>
     <select id="draw">
       <option value="surface">surface</option>
       <option value="surface+points" selected>surface + points</option>
       <option value="points">points</option>
       <option value="lines">layer lines</option>
-      <option value="points+lines">points + lines</option>
+      <option value="vlines">vertical lines</option>
+      <option value="grid">layer + vertical lines</option>
+      <option value="points+lines">points + layer lines</option>
     </select></div>
-  <div class="row"><label for="mode">Mode</label>
-    <select id="mode"><option value="auto">auto (recommended)</option><option value="manual">manual</option></select></div>
-  <div id="autoInfo"></div>
-  <div class="row"><label for="preset">Smoothing preset</label>
-    <select id="preset">
-      <option value="off">off</option><option value="light">light</option>
-      <option value="medium">medium</option><option value="strong">strong</option>
-      <option value="custom" disabled>custom</option>
-    </select></div>
-  <div id="stages"></div>
-  <div class="btns" style="margin-top:8px"><button id="resetCfg">Reset to defaults</button></div>
-  <div class="row"><span>Removed</span><span id="removed" style="font-size:12px">–</span></div>
-  <div class="row"><span title="Moving areas (people): roughness = median deviation of a moving beam from its same-surface neighbours; flicker = share of moving beams that switched between object and background since the last scan. Lower is cleaner.">Moving areas</span><span id="movQuality" style="font-size:12px">–</span></div>
-  <div class="row"><span>Triangles</span><span id="tris">–</span></div>
-
-  <h2>Objects</h2>
-  <div class="checks">
-    <label title="Colour each tracked object; everything else is dimmed"><input type="checkbox" id="oHighlight" checked> highlight</label>
-    <label><input type="checkbox" id="oDim" checked> dim background</label>
-    <label><input type="checkbox" id="oBoxes" checked> boxes</label>
-    <label><input type="checkbox" id="oLabels" checked> labels</label>
-    <label><input type="checkbox" id="oTrails" checked> trails</label>
-    <label title="Keep the selected object centred (3D and 2D map)"><input type="checkbox" id="oFollow"> follow selected</label>
-  </div>
-  <div id="objInfo" class="note2"></div>
-  <div id="objList"></div>
-  <div id="objStage"></div>
-
-  <h2>Recording</h2>
-  <div class="row"><span id="srcLabel">live sensor</span><button id="recBtn" >● Record</button></div>
-  <div id="recInfo" class="note2"></div>
-  <div id="recList"></div>
-
-  <h2>Display</h2>
   <div class="row"><label for="colorBy">Color by</label>
     <select id="colorBy">
       <option value="uniform">uniform (shaded)</option>
@@ -87,22 +76,54 @@
     <div id="legend"></div>
     <div class="legend-labels"><span id="legMin">–</span><span id="legMax">–</span></div>
   </div>
-  <div class="row"><label for="fillWalls" title="Each beam remembers the static surface it last saw; where a moving object (a person) hides it, that surface is drawn as well (a little darker), so walls don't show a shadow of the person.">Walls behind moving objects</label><input type="checkbox" id="fillWalls" checked></div>
-  <div class="row"><label for="layerSel">Layer</label><select id="layerSel"><option value="-1">all</option></select></div>
-  <div class="row"><label for="size">Point size</label><input id="size" type="range" min="0.5" max="6" step="0.5" value="1"></div>
-  <div class="row"><label for="range">Max range <span id="rangeVal"></span></label><input id="range" type="range" min="2" max="200" step="1" value="60"></div>
-  <div class="row"><label for="mount" title="Upright: sensor standing normally (negative elevation = down). Upside down: rotated 180° about the forward axis (up/down and left/right swap).">Mounting</label>
-    <select id="mount"><option value="upright">upright</option><option value="upsidedown">upside down</option></select></div>
-
-  <h2>View</h2>
-  <div class="btns" id="modeBtns">
-    <button data-mode="3d" class="on">3D</button><button data-mode="top">2D map</button><button data-mode="image">Range image</button>
+  <div class="row" data-views="3d"><span><label for="fillWalls">Walls behind moving objects</label> <span class="info" tabindex="0" role="button" data-tip="Where a moving object (a person) hides a remembered wall (Processing → Remembered walls), that wall is drawn as well, a little darker, so walls don&#x27;t show a shadow of the person.">i</span></span><input type="checkbox" id="fillWalls" checked></div>
+  <div class="row" data-views="3d top"><label for="layerSel">Layer</label><select id="layerSel"><option value="-1">all</option></select></div>
+  <div class="row" data-views="3d top" data-draw="points"><label for="size">Point size <span class="v" id="sizeVal">1 px</span></label><input id="size" type="range" min="0.5" max="6" step="0.5" value="1"></div>
+  <div class="row" data-views="3d top"><span><label for="range">Max range</label> <span class="info" tabindex="0" role="button" data-tip="Points further away than this are not drawn. Type a value and press Enter (1–250 m).">i</span></span>
+    <span class="num"><input id="range" type="number" min="1" max="250" step="any" value="60"> m</span></div>
+  <div id="meshStage" data-views="3d top" data-draw="mesh"></div>
+  <h3 data-views="3d top image">Objects in the view</h3>
+  <div class="checks">
+    <span class="info" tabindex="0" role="button" id="objHelp" data-tip="Highlight: each tracked object in its own colour. Dim background: everything else darker. Boxes, labels and trails: overlays per object. Follow selected: keep the selected object centred (click an object or a row in the list to select it).">i</span>
+    <label><input type="checkbox" id="oHighlight" checked> highlight objects</label>
+    <label><input type="checkbox" id="oDim" checked> dim background</label>
+    <label><input type="checkbox" id="oBoxes" checked> boxes</label>
+    <label><input type="checkbox" id="oLabels" checked> labels</label>
+    <label data-views="3d top"><input type="checkbox" id="oTrails" checked> trails</label>
+    <label data-views="3d top"><input type="checkbox" id="oFollow"> follow selected</label>
   </div>
-  <div class="btns" id="cam3d" style="margin-top:6px">
+  <div class="btns" id="cam3d" data-views="3d">
     <button id="vPersp">Perspective</button><button id="vTop">Top</button><button id="vSide">Side</button><button id="vFront">Front</button>
   </div>
-  <div class="btns" style="margin-top:6px"><button id="fit2d" hidden>Fit view</button><button id="pause">Pause</button></div>
+  <div class="btns" data-views="top image"><button id="fit2d" title="double-click the view does the same">Fit view</button></div>
+  <div class="row" style="margin-top:10px"><label for="theme">Theme</label>
+    <select id="theme"><option value="dark">dark</option><option value="light">light</option><option value="system">follow the system</option></select></div>
+  </details>
+
+  <details class="sect" id="secObjects" open><summary><h2>Objects <span class="val" id="objCount"></span></h2></summary>
+  <div id="objInfo" class="note2"></div>
+  <div id="objList"></div>
+  </details>
+
+  <details class="sect" id="secProc" open><summary><h2>Processing</h2></summary>
+  <div class="row"><span><label for="mount">Mounting</label> <span class="info" tabindex="0" role="button" data-tip="Upright: sensor standing normally (negative elevation = down). Upside down: the sensor is on its head (device parameter UpsideDown); up and down swap. The device already reports left/right in world terms, so only the height flips, in the 3D view, the map and the range image.">i</span></span>
+    <select id="mount"><option value="upright">upright</option><option value="upsidedown">upside down</option></select></div>  <div class="row"><span><label for="mode">Mode</label> <span class="info" tabindex="0" role="button" id="autoInfo" data-tip="">i</span></span>
+    <select id="mode"><option value="auto">auto</option><option value="manual">manual</option></select></div>
+  <div class="row"><label for="preset">Preset</label>
+    <select id="preset">
+      <option value="off">off</option><option value="light">light</option>
+      <option value="medium">medium</option><option value="strong">strong</option>
+      <option value="custom" disabled>custom</option>
+    </select></div>
+  <h3>Filters &amp; smoothing</h3>
+  <div id="stages"></div>
+  <div id="objStage"></div>
+  <div class="btns" style="margin-top:8px"><button id="resetCfg">Reset to defaults</button></div>
+  </details>
+
+  </div>
   <div id="err"></div>
+  <div id="panelResize" title="drag to resize the panel (double-click: default width)" role="separator" aria-orientation="vertical"></div>
 </div>
 <div id="labels"></div>
 <div id="transport" hidden>
@@ -114,7 +135,6 @@
   <label title="start again at the end"><input type="checkbox" id="tLoop" checked> loop</label>
   <button id="tLive" title="back to the live sensor">● Live</button>
 </div>
-<div id="hint">drag: rotate · right-drag: pan · wheel: zoom · space: pause</div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

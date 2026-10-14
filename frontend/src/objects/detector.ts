@@ -8,7 +8,10 @@ import { createBackground, foreground, updateBackground, type Background } from 
 import { segment } from "./segment";
 import { Tracker, type Track } from "./tracker";
 
-export const DIM_BACKGROUND = 0.12;
+export const DIM_BACKGROUND = 0.12, DIM_LIGHT = 0.35;   // share of the colour kept: towards black, towards a light background
+
+/** how background points are dimmed: towards black (dark theme), or towards a light background colour */
+export interface TintOptions { selected: number; dimBackground: boolean; dimTo?: RGB }
 
 export class ObjectDetector {
   readonly tracker = new Tracker();
@@ -18,7 +21,6 @@ export class ObjectDetector {
   readonly hold: Uint8Array;       // beams under a confirmed, non-static track: background must not adopt
   private lab: Int32Array; private queue: Int32Array;
   private lastTs = 0;
-  stats = "";
   foregroundCount = 0;
   lastMs = 0;
 
@@ -36,7 +38,7 @@ export class ObjectDetector {
     this.tracker.reset();
     this.bgModel = createBackground(this.N);
     this.cell.fill(0); this.hold.fill(0); this.fg.fill(0);
-    this.lastTs = 0; this.stats = ""; this.foregroundCount = 0;
+    this.lastTs = 0; this.foregroundCount = 0;
   }
 
   /** process one scan of per-scan ranges `cur` (acquisition time `ts` in seconds) */
@@ -59,14 +61,11 @@ export class ObjectDetector {
       }
     }
     updateBackground(this.bgModel, cur, g.noiseVar, this.hold, dt, c);
-    const conf = this.confirmed, people = conf.filter(t => t.cls === "person").length;
     this.lastMs = performance.now() - t0;
-    this.stats = `${conf.length} object${conf.length === 1 ? "" : "s"} (${people} ${people === 1 ? "person" : "people"}) · ` +
-      `${this.foregroundCount.toLocaleString()} foreground beams · ${this.lastMs.toFixed(1)} ms`;
   }
 
   /** colour of beam i with objects highlighted: tracked objects in their colour, the rest dimmed */
-  tint(i: number, rgb: RGB, opts: { selected: number; dimBackground: boolean }): RGB {
+  tint(i: number, rgb: RGB, opts: TintOptions): RGB {
     const id = this.cell[i];
     if (id) {
       const t = this.tracker.byId(id);
@@ -80,8 +79,11 @@ export class ObjectDetector {
   }
 
   /** colour of a background point (not part of any object) */
-  tintBackground(rgb: RGB, opts: { dimBackground: boolean }): RGB {
+  tintBackground(rgb: RGB, opts: Omit<TintOptions, "selected">): RGB {
     // dim only while something is highlighted; colours are linear and shown as sRGB: 0.12 ≈ 38 % brightness
-    return opts.dimBackground && this.hasConfirmed ? scale(rgb, DIM_BACKGROUND) : rgb;
+    if (!opts.dimBackground || !this.hasConfirmed) return rgb;
+    const to = opts.dimTo;
+    return to ? [to[0] + (rgb[0] - to[0]) * DIM_LIGHT, to[1] + (rgb[1] - to[1]) * DIM_LIGHT, to[2] + (rgb[2] - to[2]) * DIM_LIGHT]
+              : scale(rgb, DIM_BACKGROUND);
   }
 }

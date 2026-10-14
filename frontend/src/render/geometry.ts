@@ -34,17 +34,17 @@ export const FILL_DIM = 0.8;   // remembered walls are drawn a little darker tha
 export interface Geometry {
   N: number;                                  // beams; vertices are 2N (see top)
   pos: Float32Array; col: Float32Array; nrm: Float32Array;
-  pIdx: Uint32Array; lIdx: Uint32Array; tIdx: Uint32Array;
+  pIdx: Uint32Array; lIdx: Uint32Array; vIdx: Uint32Array; tIdx: Uint32Array;   // points, layer lines, vertical lines, triangles
   vis: Uint8Array;
-  np: number; nl: number; nt: number;         // points, line segments, triangles
+  np: number; nl: number; nv: number; nt: number;   // points, layer-line / vertical-line segments, triangles
   lo: number; hi: number;                     // colour scale range
   areaCounts: [number, number, number];
 }
 
 export function createGeometry(N: number): Geometry {
   return { N, pos: new Float32Array(N * 6), col: new Float32Array(N * 6), nrm: new Float32Array(N * 6),
-    pIdx: new Uint32Array(N * 2), lIdx: new Uint32Array(N * 2), tIdx: new Uint32Array(N * 12), vis: new Uint8Array(N),
-    np: 0, nl: 0, nt: 0, lo: 0, hi: 1, areaCounts: [0, 0, 0] };
+    pIdx: new Uint32Array(N * 2), lIdx: new Uint32Array(N * 2), vIdx: new Uint32Array(N * 2), tIdx: new Uint32Array(N * 12), vis: new Uint8Array(N),
+    np: 0, nl: 0, nv: 0, nt: 0, lo: 0, hi: 1, areaCounts: [0, 0, 0] };
 }
 
 /** value used for colouring beam i (before scaling) */
@@ -65,7 +65,7 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
   const { L, B, N, rayX, rayY, rayZ } = g;
   const P = geo.pos, C = geo.col, Nn = geo.nrm, vis = geo.vis;
   const vals = new Float32Array(N), F = o.fill;
-  let np = 0, nl = 0, nt = 0;
+  let np = 0, nl = 0, nv = 0, nt = 0;
   const jump = (x: number, y: number) => Math.abs(x - y) <= sameTol(Math.min(x, y), o.jump, o.jumpRel);
   const jumpOk = (a: number, b: number) => jump(D[a], D[b]);
   const inView = (d: number, l: number) => d > 0 && d <= o.maxRange && (o.layer < 0 || o.layer === l);
@@ -79,6 +79,7 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
     vals[i] = colorValue(g, i, d, P[3 * i + 2], l, o);
     geo.pIdx[np++] = i;
     if (b > 0 && vis[i - 1] && jumpOk(i, i - 1)) { geo.lIdx[2 * nl] = i - 1; geo.lIdx[2 * nl + 1] = i; nl++; }
+    if (l > 0 && vis[i - B] && jumpOk(i, i - B)) { geo.vIdx[2 * nv] = i - B; geo.vIdx[2 * nv + 1] = i; nv++; }
   }
   const npMain = np;
   if (F) for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
@@ -168,6 +169,6 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
     if (o.fillTint) rgb = o.fillTint(rgb);
     C[3 * v] = rgb[0]; C[3 * v + 1] = rgb[1]; C[3 * v + 2] = rgb[2];
   }
-  Object.assign(geo, { np, nl, nt, lo, hi, areaCounts: counts });
+  Object.assign(geo, { np, nl, nv, nt, lo, hi, areaCounts: counts });
   return geo;
 }

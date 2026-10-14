@@ -2,7 +2,7 @@
 //  1 intensity filter → 2 layer calibration → 3 motion detection (unfiltered) → 4 outlier rejection
 //  → 5 temporal model → objects (per-scan ranges) → [refine] 6 history filter → 7 bilateral
 //  → 7b moving-area smoothing → 7c radial cells → 8 planes → 9 clean outlines → walls remembered behind
-//  moving objects.
+//  moving objects (stage "walls"; off = no memory, so clean outlines only use the empty-scene background).
 // (Radial cells and the wall memory are updated in ingest.)
 // ingest() runs the per-scan stages; refine() re-runs the spatial stages (also after settings changes).
 import type { Config } from "../config/config";
@@ -22,7 +22,7 @@ import { dropMixed, frontMask, snapToWall } from "./outline";
 import { flattenPlanes } from "./planes";
 import { updateRays } from "./rays";
 import { temporalUpdate } from "./temporal";
-import { updateWall, wallFill } from "./wall";
+import { forgetWalls, updateWall, wallFill } from "./wall";
 
 export interface FrameStats {
   intensity: number; outliers: number; flicker: number; veils: number; spikes: number; mixed: number; wallFill: number; ingestMs: number; refineMs: number;
@@ -82,7 +82,7 @@ export class Processor {
     }
     this.stats = { ...this.stats, intensity, outliers, ingestMs: performance.now() - t0 };
     this.refine(true);
-    updateWall(g, g.out, this.background(), cfg);
+    if (cfg.walls.on) updateWall(g, g.out, this.background(), cfg);
     this.stats.movFlicker = this.flickerMeter!.update(g, g.out, this.objects!.bgModel, cfg);
     return g;
   }
@@ -98,6 +98,7 @@ export class Processor {
     this.stats.spikes = this.cells && this.cfg.cells.on ? this.cells.apply(g, g.raw, g.work, this.cfg) : 0;
     flattenPlanes(g, g.work, g.out, this.cfg);
     const bg = this.background();
+    if (!this.cfg.walls.on && g.wallN.some(n => n > 0)) forgetWalls(g);
     this.stats.mixed = 0;
     if (this.cfg.outline.on) {
       snapToWall(g, g.out, this.cfg, scan);

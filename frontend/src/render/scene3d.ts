@@ -4,11 +4,20 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { css, scale } from "../core/colors";
+import type { ThemeColors } from "../ui/theme";
 import type { Mount, RGB } from "../core/types";
 import { boxCorners, MAX_TRACKS, TRAIL_MAX, trackLabel, type Track } from "../objects/tracker";
+import { mountZSign } from "../pipeline/rays";
 import type { Geometry } from "./geometry";
+import { buildSensorModel } from "./sensorModel";
 
-export type DrawMode = "surface" | "surface+points" | "points" | "lines" | "points+lines";
+export type DrawMode = "surface" | "surface+points" | "points" | "lines" | "vlines" | "grid" | "points+lines";
+
+/** what a draw mode shows: layer lines run along each layer, vertical lines join a beam across layers */
+export function drawParts(d: DrawMode): { surface: boolean; points: boolean; layerLines: boolean; vLines: boolean } {
+  return { surface: d.startsWith("surface"), points: d.includes("points"),
+           layerLines: d === "lines" || d === "grid" || d === "points+lines", vLines: d === "vlines" || d === "grid" };
+}
 export type CameraView = "persp" | "top" | "side" | "front";
 export interface OverlayOptions { boxes: boolean; trails: boolean; labels: boolean; selected: number }
 
@@ -25,13 +34,17 @@ export class Scene3D {
   private pointMat = new THREE.PointsMaterial({ size: 1, sizeAttenuation: false, vertexColors: true });
   private lineMat = new THREE.LineBasicMaterial({ vertexColors: true });
   private meshMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-  private points?: THREE.Points; private lines?: THREE.LineSegments; private mesh?: THREE.Mesh;
+  private points?: THREE.Points; private lines?: THREE.LineSegments; private vlines?: THREE.LineSegments; private mesh?: THREE.Mesh;
   private attrs?: { pos: THREE.BufferAttribute; col: THREE.BufferAttribute; nrm: THREE.BufferAttribute };
   private boxes: THREE.LineSegments; private trails: THREE.LineSegments;
   private labelEls = new Map<number, HTMLDivElement>();
   private labelTracks = new Map<number, Track>();
   private draw: DrawMode = "surface+points";
   private v = new THREE.Vector3();
+  private colors: Pick<ThemeColors, "bg" | "border" | "grid2" | "accent" | "warn" | "mark"> =
+    { bg: "#0e1116", border: "#2a313c", grid2: "#3d4654", accent: "#4aa3ff", warn: "#d29922", mark: "#ffd33d" };
+  private sensorMat = new THREE.MeshBasicMaterial({ color: 0xffd33d });
+  private sensor = buildSensorModel(this.sensorMat);
 
   constructor(container: HTMLElement, private labelLayer: HTMLElement, private onSelect: (id: number) => void) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -45,8 +58,7 @@ export class Scene3D {
     const headlight = new THREE.DirectionalLight(0xffffff, 1.6);
     this.camera.add(headlight); headlight.position.set(0.3, 0.5, 1);
     this.scene.add(this.camera, this.guides);
-    const sensor = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.12), new THREE.MeshBasicMaterial({ color: 0xffd33d }));
-    this.scene.add(sensor);
+    this.scene.add(this.sensor);
     const ovMat = new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.95 });
     this.boxes = this.overlay(MAX_TRACKS * 24, ovMat);
     this.trails = this.overlay(MAX_TRACKS * TRAIL_MAX * 2, ovMat);
@@ -74,7 +86,7 @@ export class Scene3D {
 
   /** bind the GPU buffers to a Geometry (once per grid size) */
   bind(geo: Geometry): void {
-    for (const o of [this.points, this.lines, this.mesh]) if (o) { this.scene.remove(o); o.geometry.dispose(); }
+    for (const o of [this.points, this.lines, this.vlines, this.mesh]) if (o) { this.scene.remove(o); o.geometry.dispose(); }
     const attr = (a: Float32Array) => new THREE.BufferAttribute(a, 3).setUsage(THREE.DynamicDrawUsage);
     this.attrs = { pos: attr(geo.pos), col: attr(geo.col), nrm: attr(geo.nrm) };
     const mk = (idx: Uint32Array, normals: boolean) => {
@@ -87,54 +99,69 @@ export class Scene3D {
     };
     this.points = new THREE.Points(mk(geo.pIdx, false), this.pointMat);
     this.lines = new THREE.LineSegments(mk(geo.lIdx, false), this.lineMat);
+    this.vlines = new THREE.LineSegments(mk(geo.vIdx, false), this.lineMat);
     this.mesh = new THREE.Mesh(mk(geo.tIdx, true), this.meshMat);
-    for (const o of [this.mesh, this.lines, this.points]) { o.frustumCulled = false; this.scene.add(o); }
+    for (const o of [this.mesh, this.lines, this.vlines, this.points]) { o.frustumCulled = false; this.scene.add(o); }
     this.setDraw(this.draw);
   }
 
   /** upload a rebuilt Geometry (same arrays as bound) */
   update(geo: Geometry): void {
-    if (!this.attrs || !this.points || !this.lines || !this.mesh) return;
+    if (!this.attrs || !this.points || !this.lines || !this.vlines || !this.mesh) return;
     this.points.geometry.setDrawRange(0, geo.np);
     this.lines.geometry.setDrawRange(0, geo.nl * 2);
+    this.vlines.geometry.setDrawRange(0, geo.nv * 2);
     this.mesh.geometry.setDrawRange(0, geo.nt * 3);
-    for (const o of [this.points, this.lines, this.mesh]) o.geometry.index!.needsUpdate = true;
+    for (const o of [this.points, this.lines, this.vlines, this.mesh]) o.geometry.index!.needsUpdate = true;
     this.attrs.pos.needsUpdate = this.attrs.col.needsUpdate = this.attrs.nrm.needsUpdate = true;
     this.needsRender = true;
   }
 
   setDraw(draw: DrawMode): void {
     this.draw = draw;
-    if (this.mesh) this.mesh.visible = draw.startsWith("surface");
-    if (this.points) this.points.visible = draw.includes("points");
-    if (this.lines) this.lines.visible = draw.includes("lines");
+    const p = drawParts(draw);
+    if (this.mesh) this.mesh.visible = p.surface;
+    if (this.points) this.points.visible = p.points;
+    if (this.lines) this.lines.visible = p.layerLines;
+    if (this.vlines) this.vlines.visible = p.vLines;
     this.needsRender = true;
   }
 
   setPointSize(px: number): void { this.pointMat.size = px; this.needsRender = true; }
 
+  /** background, sensor origin mark and guide colours from the theme (call buildGuides afterwards) */
+  setTheme(c: ThemeColors): void {
+    this.colors = c;
+    this.renderer.setClearColor(new THREE.Color(c.bg));
+    this.sensorMat.color.set(c.mark);
+    this.needsRender = true;
+  }
+
   /** range rings every 5/10 m, ±60° FOV lines, vertical field-of-view fan (lowest / highest layer) */
   buildGuides(maxR: number, fanElevDeg: [number, number], mount: Mount): void {
     this.guides.clear();
-    const ringMat = new THREE.LineBasicMaterial({ color: 0x2a313c }), ring10 = new THREE.LineBasicMaterial({ color: 0x3d4654 });
+    const c = this.colors, ringMat = new THREE.LineBasicMaterial({ color: c.border }), ring10 = new THREE.LineBasicMaterial({ color: c.grid2 });
     const step = maxR > 60 ? 10 : 5;
     for (let r = step; r <= maxR; r += step) {
       const pts: THREE.Vector3[] = [];
       for (let a = -180; a <= 180; a += 2) pts.push(new THREE.Vector3(r * Math.cos(a * Math.PI / 180), r * Math.sin(a * Math.PI / 180), 0));
       this.guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), r % (step * 2) === 0 ? ring10 : ringMat));
     }
-    const fov = new THREE.LineBasicMaterial({ color: 0x4aa3ff, transparent: true, opacity: 0.35 });
+    const fov = new THREE.LineBasicMaterial({ color: c.accent, transparent: true, opacity: 0.35 });
     for (const a of [-60, 60]) {
       const rad = a * Math.PI / 180;
       this.guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(
         [new THREE.Vector3(0, 0, 0), new THREE.Vector3(maxR * Math.cos(rad), maxR * Math.sin(rad), 0)]), fov));
     }
-    const sgn = mount === "upsidedown" ? -1 : 1, fanMat = new THREE.LineBasicMaterial({ color: 0xd29922, transparent: true, opacity: 0.6 });
+    const sgn = mountZSign(mount), fanMat = new THREE.LineBasicMaterial({ color: c.warn, transparent: true, opacity: 0.6 });
     for (const e of fanElevDeg) {
       const el = e * Math.PI / 180;
       this.guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(
         [new THREE.Vector3(0, 0, 0), new THREE.Vector3(maxR * Math.cos(el), 0, sgn * maxR * Math.sin(el))]), fanMat));
     }
+    // mirrored like the rays, but the device's elevations count the other way from the housing (the drawing's
+    // fan rises −1.5…13.5° above the window, "upright" data spans −13.19…1.19°): upright data = window at the bottom
+    this.sensor.scale.z = -sgn * Math.abs(this.sensor.scale.z);
     this.guides.add(new THREE.AxesHelper(1));         // red x (forward), green y (left), blue z (up)
     this.needsRender = true;
   }

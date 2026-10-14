@@ -98,12 +98,32 @@ describe("viewer in a browser", () => {
   });
 
   it("switches between 3D, map and range image", async () => {
+    await page.waitForFunction(() => /^24×301 @ [\d.]+ Hz$/.test(document.getElementById("sumStream")!.textContent!));   // playing again
+    expect(await page.textContent("#sumDevice")).toBe("no sensor (offline)");
+    await page.click("#statsBox summary");                     // statistics unfold on their own
+    await page.waitForFunction(() => /Processing\D*\d+ ms/.test(document.getElementById("statsList")!.textContent!));
+    expect(await page.isVisible("#rate")).toBe(false);          // stream box still folded
+    expect(await page.isVisible("#vPersp")).toBe(true);
     await page.click('[data-mode="top"]');
     expect(await page.isVisible("#view2d")).toBe(true);
     expect(await page.isHidden("#view")).toBe(true);
+    expect(await page.isHidden("#vPersp")).toBe(true);           // camera shortcuts are 3D only
+    expect(await page.isHidden("#fillWalls")).toBe(true);
+    expect(await page.isVisible("#range")).toBe(true);
     await shot("map");
     await page.click('[data-mode="image"]');
     await page.mouse.move(800, 60);
+    for (const id of ["#draw", "#range", "#size", "#layerSel"]) expect(await page.isHidden(id), id).toBe(true);
+    const layerAt = async (x: number) => {                     // layer under the mouse, from the tooltip
+      await page.mouse.move(x, 50);
+      await page.waitForFunction(() => /^layer \d+ /.test(document.getElementById("tip")!.textContent!));
+      return Number((await page.textContent("#tip"))!.match(/^layer (\d+)/)![1]);
+    };
+    const upright = await layerAt(800);
+    expect(upright).toBeGreaterThan(11);                         // upper half: high layers
+    await page.selectOption("#mount", "upsidedown");             // on its head: the rows flip
+    expect(await layerAt(801)).toBe(23 - upright);
+    await page.selectOption("#mount", "upright");
     await shot("range-image");
     await page.click('[data-mode="3d"]');
     expect(await page.isVisible("#view")).toBe(true);
@@ -113,10 +133,30 @@ describe("viewer in a browser", () => {
     await page.selectOption("#mode", "manual");
     await page.selectOption("#preset", "strong");
     expect(await appState<number>("a.cfg.temporal.window")).toBe(30);
+    await page.selectOption("#draw", "grid");
+    await page.waitForFunction(() => (window as unknown as { mrs6000: { geo: { nv: number } } }).mrs6000.geo.nv > 1000);   // presets restart the histories
+    await shot("grid-lines");
+    await page.selectOption("#draw", "surface+points");
+    await page.click('[data-key="temporal"] summary .name');   // open the stage
+    await page.click("#cfg-temporal-window-val");               // type an exact value
+    await page.fill("#secProc input.pedit", "23");
+    await page.press("#secProc input.pedit", "Enter");
+    expect(await appState<number>("a.cfg.temporal.window")).toBe(23);
+    expect(await page.locator('[data-key="temporal"].is-changed').count()).toBe(1);
+    await page.selectOption("#theme", "light");
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(246, 247, 249)");
+    await shot("light");
+    await page.selectOption("#theme", "dark");
     await page.selectOption("#colorBy", "height");
     await page.uncheck("#oBoxes");
     expect(await appState<boolean>("a.ui.boxes")).toBe(false);
     await page.check("#oBoxes");
+    await page.fill("#range", "25.5");
+    await page.press("#range", "Enter");
+    expect(await appState<number>("a.ui.maxRange")).toBe(25.5);
+    await page.fill("#range", "9999");
+    await page.press("#range", "Enter");
+    expect(await page.inputValue("#range")).toBe("250");
     await page.selectOption("#mode", "auto");
   });
 
@@ -126,6 +166,15 @@ describe("viewer in a browser", () => {
     expect(await page.isDisabled("#recBtn")).toBe(true);
     expect(await page.textContent("#srcLabel")).toBe("offline (no sensor)");
     expect(await page.textContent("#recList")).toContain("synthetic");
+    await page.click("#recList .rrow .more");
+    expect(await page.textContent(".menu")).toMatch(/MB · 120 scans/);
+    await shot("recording-menu");
+    await page.click("#recList .rrow .more");                 // the same ⋯ closes it
+    expect(await page.locator(".menu").count()).toBe(0);
+    await page.hover("#autoInfo");
+    expect(await page.textContent("#infoTip")).toMatch(/^Auto: /);
+    await page.mouse.move(900, 500);
+    expect(await page.isHidden("#infoTip")).toBe(true);
     await page.click("#recList .rrow");                       // play it again from the list
     await page.waitForFunction(() => !document.getElementById("transport")!.hidden);
   });

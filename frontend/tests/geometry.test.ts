@@ -25,10 +25,19 @@ describe("geometry", () => {
 
   it("does not connect across depth jumps", () => {
     const g = processed([{ x: 2, y: 0, r: 0.3, z0: -1, z1: 2 }]), geo = buildGeometry(g, g.out, createGeometry(g.N), opts);
-    for (let k = 0; k < geo.nl; k++) {
-      const a = geo.lIdx[2 * k], b = geo.lIdx[2 * k + 1];
-      expect(Math.abs(g.out[a] - g.out[b])).toBeLessThan(0.5);
-    }
+    for (const [idx, n] of [[geo.lIdx, geo.nl], [geo.vIdx, geo.nv]] as const)
+      for (let k = 0; k < n; k++) {
+        const a = idx[2 * k], b = idx[2 * k + 1];
+        expect(Math.abs(g.out[a] - g.out[b])).toBeLessThan(0.5);
+      }
+  });
+
+  it("vertical lines join each beam to the same beam one layer below", () => {
+    const g = processed(), geo = buildGeometry(g, g.out, createGeometry(g.N), opts);
+    expect(geo.nv).toBeGreaterThan(Array.from(g.out).filter(v => v > 0).length * 0.8);
+    for (let k = 0; k < geo.nv; k++) expect(geo.vIdx[2 * k + 1] - geo.vIdx[2 * k]).toBe(g.B);
+    const one = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, layer: 5 });
+    expect(one.nv).toBe(0);                                     // a single layer has none
   });
 
   it("filters by layer and range, colours by distance with a tint", () => {

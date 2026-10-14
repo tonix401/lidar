@@ -22,6 +22,25 @@ describe("config", () => {
     expect(PRESETS.off.temporal.on).toBe(false);
   });
 
+  it("off switches every stage that changes ranges off, the others switch the default ones back on", () => {
+    const off = withPreset(defaultConfig(), "off");
+    for (const k of ["intensity", "layercal", "adaptive", "cells", "walls", "outlier", "temporal", "spatial", "planes", "outline"] as const)
+      expect(off[k].on, k).toBe(false);
+    expect(off.objects.on).toBe(true);                         // detection doesn't change the ranges
+    expect(matchingPreset(off)).toBe("off");
+    expect(matchingPreset({ ...off, layercal: { ...off.layercal, on: true } })).toBe("custom");
+    const med = withPreset(off, "medium");
+    expect(med.layercal.on && med.adaptive.on && med.walls.on).toBe(true);
+    expect(med.cells.on || med.intensity.on).toBe(false);
+    expect(matchingPreset(med)).toBe("medium");
+  });
+
+  it("auto mode keeps the user's clean-outlines switch and tunes its margin", () => {
+    const base = defaultConfig();
+    base.outline.on = false;
+    expect(autoConfig(base, 0.03).outline).toEqual({ on: false, margin: 0.12 });
+  });
+
   it("mergeConfig keeps only known keys of the right type", () => {
     const m = mergeConfig(defaultConfig(), { temporal: { window: 33, k: "x", bogus: 1 }, nope: {}, objects: null });
     expect(m.temporal.window).toBe(33);
@@ -33,7 +52,8 @@ describe("config", () => {
   it("fmtParam", () => {
     expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 1, unit: " m" }, 3)).toBe("3 m");
     expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 0.005, pct: true }, 0.02)).toBe("+2.0 % of range");
-    expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 0.001 }, 0.0123)).toBe("0.012");
+    expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 0.001 }, 0.012)).toBe("0.012");
+    expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 0.001 }, 0.0123)).toBe("0.0123");   // typed in: all digits
   });
 
   it("auto config scales tolerances with the noise floor and keeps user stages", () => {
@@ -60,7 +80,8 @@ describe("config", () => {
     const base = defaultConfig();
     base.cells.on = true;
     expect(autoConfig(base, 0.03).cells.on).toBe(true);
-    expect(withPreset(base, "off").cells.on).toBe(true);
+    expect(withPreset(base, "light").cells.on).toBe(true);    // presets other than off leave opt-in stages alone
+    expect(withPreset(base, "off").cells.on).toBe(false);     // off = raw
   });
 
   it("estimateNoise needs enough established beams", () => {

@@ -1,9 +1,15 @@
+import type { ServerState } from "../core/types";
 import { $ } from "./dom";
 
 const STATUS: Record<number, string> = { 0: "unknown", 1: "startup", 2: "service mode", 3: "normal", 4: "suspended",
   5: "service recommended", 6: "service required", 7: "recoverable error", 8: "fatal error" };
 
 const num = (v: unknown, digits: number, unit: string) => typeof v === "number" ? v.toFixed(digits) + unit : "–";
+
+/** collapsed status line for the sensor connection */
+export function deviceSummary(s: Pick<ServerState, "sensor" | "live_error">): { text: string; dot: string } {
+  return !s.sensor ? { text: "no sensor (offline)", dot: "" } : s.live_error ? { text: "disconnected", dot: "err" } : { text: "connected", dot: "ok" };
+}
 
 /** device section of the panel from REST status values */
 export function renderDevice(d: Record<string, unknown>): void {
