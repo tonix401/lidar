@@ -1,0 +1,1506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRS6000 Live View</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22e6; --border: #2a313c; --text: #d7dde5; --muted: #8b95a3;
+    --accent: #4aa3ff; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; }
+  #view2d { position: fixed; inset: 0; width: 100%; height: 100%; background: var(--bg); cursor: crosshair; }
+  #tip { position: fixed; pointer-events: none; background: #161b22f0; border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 8px; font-size: 12px; line-height: 1.5; white-space: pre; font-variant-numeric: tabular-nums; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 280px; max-height: calc(100% - 24px);
+    overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; backdrop-filter: blur(6px); }
+  h1 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 14px 0 6px; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; }
+  .row span:last-child { font-variant-numeric: tabular-nums; }
+  label { color: var(--muted); }
+  select, input[type=range] { width: 150px; }
+  select { background: #0d1117; color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  button { background: #21262d; color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+  #legendBox.hidden { display: none; }
+  #legend { height: 10px; border-radius: 3px; margin-top: 6px; }
+  .legend-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+  #hint { position: fixed; bottom: 10px; right: 14px; color: var(--muted); font-size: 11px; }
+  #err { color: var(--err); font-size: 12px; margin-top: 8px; }
+  details.stage { border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; padding: 0 8px; }
+  details.stage[open] { padding-bottom: 6px; }
+  details.stage summary { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; list-style: none; }
+  details.stage summary::-webkit-details-marker { display: none; }
+  details.stage summary::before { content: "▸"; color: var(--muted); width: 10px; }
+  details.stage[open] summary::before { content: "▾"; }
+  details.stage summary .name { flex: 1; }
+  details.stage.off summary .name { color: var(--muted); }
+  details.stage .note { color: var(--muted); font-size: 11px; margin: 0 0 4px; }
+  .param { margin: 6px 0; }
+  .param .top { display: flex; justify-content: space-between; font-size: 12px; }
+  .param .top span:last-child { font-variant-numeric: tabular-nums; }
+  .param input[type=range] { width: 100%; }
+  details.stage.off .param { opacity: .45; }
+  @media (max-width: 600px) { #panel { width: calc(100% - 24px); max-height: 45%; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="view"></div>
+<canvas id="view2d" hidden></canvas>
+<div id="tip" hidden></div>
+<div id="panel">
+  <h1 id="title">MRS6000</h1>
+  <div class="sub" id="subtitle">connecting…</div>
+
+  <h2>Stream</h2>
+  <div class="row"><span><span class="dot" id="streamDot"></span>Scan rate</span><span id="rate">–</span></div>
+  <div class="row"><span>Points / scan</span><span id="points">–</span></div>
+  <div class="row"><span>Layers × beams</span><span id="geom">–</span></div>
+  <div class="row"><span>Processing</span><span id="proc">–</span></div>
+  <div class="row"><span title="3D renders per second: on demand, so ≈ scan rate with a still camera">Renders / s</span><span id="fps">–</span></div>
+
+  <h2>Device</h2>
+  <div class="row"><span><span class="dot" id="devDot"></span>Status</span><span id="devStatus">–</span></div>
+  <div class="row"><span>System / APD temp</span><span id="temps">–</span></div>
+  <div class="row"><span>Supply</span><span id="volt">–</span></div>
+  <div class="row"><span>Mirror</span><span id="mirror">–</span></div>
+  <div class="row"><span>Window</span><span id="window">–</span></div>
+
+  <h2>Surface</h2>
+  <div class="row"><label for="draw">Draw</label>
+    <select id="draw">
+      <option value="surface">surface</option>
+      <option value="surface+points">surface + points</option>
+      <option value="points">points</option>
+      <option value="lines">layer lines</option>
+      <option value="points+lines">points + lines</option>
+    </select></div>
+  <div class="row"><label for="mode">Mode</label>
+    <select id="mode"><option value="auto">auto (recommended)</option><option value="manual">manual</option></select></div>
+  <div id="autoInfo" class="note" style="color:var(--muted);font-size:11px;margin:2px 0 6px"></div>
+  <div class="row"><label for="preset">Smoothing preset</label>
+    <select id="preset">
+      <option value="off">off</option><option value="light">light</option>
+      <option value="medium">medium</option><option value="strong">strong</option>
+      <option value="custom" disabled>custom</option>
+    </select></div>
+  <div id="stages"></div>
+  <div class="btns" style="margin-top:8px"><button id="resetCfg">Reset to defaults</button></div>
+  <div class="row"><span>Removed</span><span id="removed" style="font-size:12px">–</span></div>
+  <div class="row"><span>Triangles</span><span id="tris">–</span></div>
+
+  <h2>Display</h2>
+  <div class="row"><label for="colorBy">Color by</label>
+    <select id="colorBy">
+      <option value="uniform">uniform (shaded)</option>
+      <option value="rssi">RSSI (intensity)</option>
+      <option value="dist">Distance</option>
+      <option value="height">Height</option>
+      <option value="layer">Layer</option>
+      <option value="noise">Noise σ (history)</option>
+      <option value="conf">Confidence (history)</option>
+      <option value="area">Area class (adaptive)</option>
+    </select></div>
+  <div id="legendBox" class="hidden">
+    <div id="legend"></div>
+    <div class="legend-labels"><span id="legMin">–</span><span id="legMax">–</span></div>
+  </div>
+  <div class="row"><label for="layerSel">Layer</label><select id="layerSel"><option value="-1">all</option></select></div>
+  <div class="row"><label for="size">Point size</label><input id="size" type="range" min="0.5" max="6" step="0.5" value="1"></div>
+  <div class="row"><label for="range">Max range <span id="rangeVal"></span></label><input id="range" type="range" min="2" max="200" step="1" value="60"></div>
+  <div class="row"><label for="mount" title="Upright: sensor standing normally (negative elevation = down). Upside down: rotated 180° about the forward axis (up/down and left/right swap).">Mounting</label>
+    <select id="mount"><option value="upright">upright</option><option value="upsidedown">upside down</option></select></div>
+
+  <h2>View</h2>
+  <div class="btns" id="modeBtns">
+    <button data-mode="3d" class="on">3D</button><button data-mode="top">2D map</button><button data-mode="image">Range image</button>
+  </div>
+  <div class="btns" id="cam3d" style="margin-top:6px">
+    <button id="vPersp">Perspective</button><button id="vTop">Top</button><button id="vSide">Side</button><button id="vFront">Front</button>
+  </div>
+  <div class="btns" style="margin-top:6px"><button id="fit2d" hidden>Fit view</button><button id="pause">Pause</button></div>
+  <div id="err"></div>
+</div>
+<div id="hint">drag: rotate · right-drag: pan · wheel: zoom · space: pause</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// ---------- scene ----------
+const container = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x0e1116);
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+let needsRender = true;                     // 3D view is drawn on demand (see animate)
+const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 2000);
+camera.up.set(0, 0, 1);                     // sensor frame: x forward, y left, z up
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// lighting for the surface: soft sky/ground fill + a headlight that follows the camera
+scene.add(new THREE.HemisphereLight(0xdde6f0, 0x2a2f38, 0.9));
+const headlight = new THREE.DirectionalLight(0xffffff, 1.6);
+camera.add(headlight); headlight.position.set(0.3, 0.5, 1);
+scene.add(camera);
+
+function resize() {
+  needsRender = true;
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize); resize();
+
+// range rings every 5 m (labels every 10 m) + FOV wedge
+const guides = new THREE.Group(); scene.add(guides);
+let fanElev = [-13.19, 1.19];               // lowest / highest layer elevation (updated from the data)
+function buildGuides(maxR) {
+  guides.clear();
+  const ringMat = new THREE.LineBasicMaterial({ color: 0x2a313c });
+  const ring10 = new THREE.LineBasicMaterial({ color: 0x3d4654 });
+  const step = maxR > 60 ? 10 : 5;
+  for (let r = step; r <= maxR; r += step) {
+    const pts = [];
+    for (let a = -180; a <= 180; a += 2) pts.push(new THREE.Vector3(r * Math.cos(a * Math.PI / 180), r * Math.sin(a * Math.PI / 180), 0));
+    guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), r % (step * 2) === 0 ? ring10 : ringMat));
+  }
+  const fov = new THREE.LineBasicMaterial({ color: 0x4aa3ff, transparent: true, opacity: 0.35 });
+  for (const a of [-60, 60]) {
+    const rad = a * Math.PI / 180;
+    guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(0, 0, 0), new THREE.Vector3(maxR * Math.cos(rad), maxR * Math.sin(rad), 0)]), fov));
+  }
+  // vertical field of view: the sensor only sees a fan from the lowest to the highest layer angle,
+  // so a wall running away from the sensor is covered by a wedge that grows with distance
+  const sgn = ui.mount === "upsidedown" ? -1 : 1, fanMat = new THREE.LineBasicMaterial({ color: 0xd29922, transparent: true, opacity: 0.6 });
+  for (const e of fanElev) {
+    const r = maxR, el = e * Math.PI / 180;
+    guides.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(0, 0, 0), new THREE.Vector3(r * Math.cos(el), 0, sgn * r * Math.sin(el))]), fanMat));
+  }
+  guides.add(new THREE.AxesHelper(1));       // red x (forward), green y (left), blue z (up)
+}
+
+// sensor marker
+const sensor = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.12), new THREE.MeshBasicMaterial({ color: 0xffd33d }));
+scene.add(sensor);
+
+// turbo colormap (Google, polynomial approximation)
+function turbo(t) {
+  t = Math.min(1, Math.max(0, t));
+  const r = 0.13572138 + t * (4.61539260 + t * (-42.66032258 + t * (132.13108234 + t * (-152.94239396 + t * 59.28637943))));
+  const g = 0.09140261 + t * (2.19418839 + t * (4.84296658 + t * (-14.18503333 + t * (4.27729857 + t * 2.82956604))));
+  const b = 0.10667330 + t * (12.64194608 + t * (-60.58204836 + t * (110.36276771 + t * (-89.90310912 + t * 27.34824973))));
+  return [Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b))];
+}
+document.getElementById("legend").style.background = "linear-gradient(90deg," +
+  Array.from({ length: 11 }, (_, i) => { const [r, g, b] = turbo(i / 10); return `rgb(${r * 255 | 0},${g * 255 | 0},${b * 255 | 0})`; }).join(",") + ")";
+
+// ---------- UI state ----------
+const $ = id => document.getElementById(id);
+const ui = { colorBy: "uniform", layer: -1, maxRange: 60, mount: "upright", paused: false, draw: "surface" };
+let mountChosen = false;                    // until the user picks one, follow the device's UpsideDown parameter
+try { const m = localStorage.getItem("mrs6000.mount.v2"); if (m === "upright" || m === "upsidedown") { ui.mount = m; mountChosen = true; } } catch (e) {}
+
+const DEG = Math.PI / 180;
+
+// ---------- smoothing configuration (schema → generated controls) ----------
+// Every tunable of the processing pipeline. `pct` params are shown as % per metre of range.
+const STAGES = [
+  { key: "intensity", title: "Intensity filter", toggle: true, extra: "histogram", preset: false,
+    help: "Drops returns whose RSSI lies outside the range, before any smoothing (weak returns are often noise; very strong ones are reflectors).",
+    params: [
+      { k: "min", label: "Min. RSSI", min: 0, max: 400, step: 1 },
+      { k: "max", label: "Max. RSSI", min: 0, max: 400, step: 1 } ] },
+  { key: "layercal", title: "Layer calibration", toggle: true, extra: "layerbias", preset: false,
+    help: "Each of the 24 layers has its own constant distance offset (up to a few cm), which shows up as horizontal " +
+          "waves on flat walls. The offsets are learned live: each layer's median deviation from planes fitted through " +
+          "its neighbouring layers. Mean, bottom-to-top trend and slow bow are pinned to zero (unmeasurable " +
+          "from plane fits, they would otherwise drift into tilted or bulging walls), so scale and verticality are untouched.",
+    params: [
+      { k: "rate", label: "Learning rate", min: 0, max: 1, step: 0.05, fmt: v => v ? Math.round(v * 100) + " % per update" : "frozen" } ] },
+  { key: "adaptive", title: "Adaptive per area", toggle: true, preset: false,
+    help: "Detects moving areas (clusters of beams whose new value breaks their own history) and processes them " +
+          "lightly: no long averaging or confirmation delay, no flicker removal, little spatial smoothing, no plane " +
+          "flattening. Static areas keep the full settings below. Colour by 'Area class' to see the result.",
+    params: [
+      { k: "minCluster", label: "Min. moving cluster", min: 1, max: 60, step: 1, unit: " beams" },
+      { k: "growBeams", label: "Grow into object", min: 0, max: 30, step: 1, unit: " steps" },
+      { k: "hold", label: "Stay 'moving' after last change", min: 1, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)` },
+      { k: "dynWindow", label: "Averaging in moving areas", min: 1, max: 5, step: 1, unit: " scans" },
+      { k: "dynSpatial", label: "Spatial window in moving areas", min: 0, max: 6, step: 1, unit: " beams" } ] },
+  { key: "outlier", title: "Outlier filter", toggle: true, note: "Applies to new scans.",
+    help: "Drops returns without enough neighbours at a similar distance in the same layer.",
+    params: [
+      { k: "win", label: "Neighbour window", min: 1, max: 8, step: 1, unit: " beams" },
+      { k: "need", label: "Required neighbours", min: 1, max: 6, step: 1 },
+      { k: "abs", label: "Distance tolerance", min: 0.02, max: 0.5, step: 0.01, unit: " m" },
+      { k: "rel", label: "Tolerance growth", min: 0, max: 0.1, step: 0.005, pct: true } ] },
+  { key: "temporal", title: "Temporal smoothing", toggle: true, note: "Applies to new scans.",
+    help: "Each beam averages its own history (Kalman-style): the window grows while the beam is still, " +
+          "its noise σ is learned, a change beyond k·σ must be confirmed by following scans before the beam " +
+          "switches (single spikes are ignored, real motion is followed).",
+    params: [
+      { k: "window", label: "Max. averaging window", min: 1, max: 60, step: 1, unit: " scans" },
+      { k: "k", label: "Change gate", min: 1.5, max: 8, step: 0.5, fmt: v => v.toFixed(1) + " σ" },
+      { k: "minGate", label: "Min. gate", min: 0.03, max: 0.5, step: 0.01, unit: " m" },
+      { k: "confirm", label: "Confirm change after", min: 1, max: 5, step: 1, unit: " scans" },
+      { k: "noiseFloor", label: "Noise floor σ", min: 0.005, max: 0.1, step: 0.001, fmt: v => Math.round(v * 1000) + " mm" },
+      { k: "hold", label: "Hold through dropouts", min: 0, max: 10, step: 1, unit: " scans" } ] },
+  { key: "history", title: "History filter", toggle: true,
+    help: "Uses each beam's last 32 scans: drops beams that flicker (rarely valid or often jumping — mixed pixels " +
+          "at edges, dust, reflections) and lets stable beams count more in spatial smoothing and plane fits.",
+    params: [
+      { k: "minValid", label: "Min. valid in history", min: 0, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + " %" },
+      { k: "maxJump", label: "Max. jump rate", min: 0.05, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + " %" },
+      { k: "weight", label: "Confidence weighting", min: 0, max: 3, step: 0.25, fmt: v => v ? "×" + v.toFixed(2) : "off" } ] },
+  { key: "spatial", title: "Spatial smoothing", toggle: true,
+    help: "Edge-preserving bilateral filter on the range image.",
+    params: [
+      { k: "wb", label: "Window along layer", min: 1, max: 12, step: 1, unit: " beams" },
+      { k: "wl", label: "Window across layers", min: 0, max: 2, step: 1, unit: " layers" },
+      { k: "srAbs", label: "Edge sensitivity σ", min: 0.01, max: 0.3, step: 0.005, unit: " m" },
+      { k: "srRel", label: "σ growth", min: 0, max: 0.05, step: 0.001, pct: true },
+      { k: "srNoise", label: "σ from beam noise", min: 0, max: 5, step: 0.5, fmt: v => v ? `≥ ${v}× beam σ` : "off" } ] },
+  { key: "planes", title: "Flatten planes", toggle: true,
+    help: "Fits a plane around each point (PCA) and moves the point along its beam onto it.",
+    params: [
+      { k: "wb", label: "Window along layer", min: 1, max: 12, step: 1, unit: " beams" },
+      { k: "wl", label: "Window across layers", min: 0, max: 2, step: 1, unit: " layers" },
+      { k: "planarity", label: "Max. curvature", min: 0.002, max: 0.2, step: 0.002, fmt: v => v.toFixed(3) },
+      { k: "minPts", label: "Min. points in fit", min: 4, max: 40, step: 1 },
+      { k: "minCos", label: "Min. incidence", min: 0, max: 0.6, step: 0.01, fmt: v => Math.round(Math.asin(v) / DEG) + "° to surface" },
+      { k: "tolAbs", label: "Same-surface tolerance", min: 0.05, max: 0.5, step: 0.01, unit: " m" },
+      { k: "tolRel", label: "Tolerance growth", min: 0, max: 0.1, step: 0.005, pct: true },
+      { k: "noiseFlat", label: "Flat test", min: 0, max: 5, step: 0.25, fmt: v => v ? `residual ≤ ${v}× noise floor` : "curvature only" } ] },
+  { key: "mesh", title: "Mesh / lines", toggle: false,
+    help: "Neighbours further apart in distance than this are not connected (object edges).",
+    params: [
+      { k: "jump", label: "Break at jump", min: 0.05, max: 3, step: 0.05, unit: " m" },
+      { k: "jumpRel", label: "Jump growth", min: 0, max: 0.1, step: 0.005, pct: true } ] },
+];
+const PRESET_KEYS = STAGES.filter(s => s.preset !== false).map(s => s.key);
+
+const PRESETS = {
+  medium: {
+    outlier: { on: true, win: 2, need: 1, abs: 0.15, rel: 0.03 },
+    temporal: { on: true, window: 10, k: 3, minGate: 0.1, confirm: 2, noiseFloor: 0.02, hold: 2 },
+    history: { on: true, minValid: 0.5, maxJump: 0.4, weight: 1 },
+    spatial: { on: true, wb: 3, wl: 0, srAbs: 0.05, srRel: 0.01, srNoise: 0 },
+    planes: { on: true, wb: 4, wl: 1, planarity: 0.02, minPts: 8, minCos: 0.15, tolAbs: 0.2, tolRel: 0.03, noiseFlat: 0 },
+    mesh: { jump: 0.5, jumpRel: 0.02 },
+  },
+};
+PRESETS.off = structuredClone(PRESETS.medium);
+for (const k of ["outlier", "temporal", "history", "spatial", "planes"]) PRESETS.off[k].on = false;
+PRESETS.light = structuredClone(PRESETS.medium);
+Object.assign(PRESETS.light.temporal, { window: 4, confirm: 1 });
+Object.assign(PRESETS.light.history, { minValid: 0.3, maxJump: 0.6, weight: 0.5 });
+Object.assign(PRESETS.light.spatial, { wb: 2 });
+Object.assign(PRESETS.light.planes, { wb: 3, planarity: 0.01 });
+PRESETS.strong = structuredClone(PRESETS.medium);
+Object.assign(PRESETS.strong.outlier, { win: 3, need: 2, abs: 0.1, rel: 0.02 });
+Object.assign(PRESETS.strong.temporal, { window: 30, confirm: 3 });
+Object.assign(PRESETS.strong.history, { minValid: 0.7, maxJump: 0.25, weight: 2 });
+Object.assign(PRESETS.strong.spatial, { wb: 6, wl: 1 });
+Object.assign(PRESETS.strong.planes, { wb: 7, planarity: 0.06 });
+const DEFAULT_INTENSITY = { on: false, min: 0, max: 400 };
+const DEFAULT_LAYERCAL = { on: true, rate: 0.3 };
+const DEFAULT_ADAPTIVE = { on: true, minCluster: 8, growBeams: 12, hold: 10, dynWindow: 1, dynSpatial: 1 };   // tuned on a recorded walk
+
+const STORE_KEY = "mrs6000.smoothing.v3";
+// manual settings are kept separately, so switching auto → manual → auto never loses them
+let manualCfg = { ...structuredClone(PRESETS.medium), intensity: { ...DEFAULT_INTENSITY }, layercal: { ...DEFAULT_LAYERCAL }, adaptive: { ...DEFAULT_ADAPTIVE } };
+let mode = "auto";
+try {                                         // remembered per browser; any problem → defaults
+  const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+  if (saved) {
+    if (saved.mode === "manual" || saved.mode === "auto") mode = saved.mode;
+    for (const s of STAGES) Object.assign(manualCfg[s.key], (saved.manual || {})[s.key] || {});
+  }
+} catch (e) { /* storage unavailable */ }
+
+// ---------- auto mode: settings derived from measured scene statistics ----------
+// Rules from the literature (sources in the README of this viewer's discussion):
+//  • z-gate of 3 σ per beam (beam-wise statistical background subtraction for static LiDAR),
+//  • tolerances scale with the measured noise floor and with range·tan(beam step) (range-adaptive radius),
+//  • bilateral range σ follows each beam's own noise (noise-adaptive bilateral filtering),
+//  • "flat" = plane residual within ~2 σ of the noise floor,
+//  • motion: established model (≥5 scans), cluster filter, seeds grown into the object, short persistence
+//    (Dynablox); cluster 8 / grow 12 / hold 1 s were then tuned on a recorded walk (moving beams wrong
+//    or missing 73 % → 3 %, static surfaces unchanged), immediate following + light filtering when moving.
+let autoNoise = 0.02, autoStats = "", autoFrame = 0;
+function autoCfg(base) {
+  const nf = autoNoise, rel = 4 * Math.tan(0.13 * Math.PI / 180);      // ≈ 1 % of range per beam step
+  return {
+    ...structuredClone(base),
+    outlier: { on: true, win: 2, need: 1, abs: Math.max(0.1, 5 * nf), rel: +rel.toFixed(3) },
+    temporal: { on: true, window: 20, k: 3, minGate: Math.max(0.06, 2.5 * nf), confirm: 2, noiseFloor: nf, hold: 2 },
+    history: { on: true, minValid: 0.5, maxJump: 0.3, weight: 1 },
+    spatial: { on: true, wb: 3, wl: 0, srAbs: 1.5 * nf, srRel: 0.005, srNoise: 2 },
+    planes: { on: true, wb: 5, wl: 1, planarity: 0.02, minPts: 12, minCos: 0.2, tolAbs: Math.max(0.1, 5 * nf), tolRel: 0.02, noiseFlat: 2 },
+    mesh: { jump: 0.3, jumpRel: 0.03 },
+    adaptive: { on: true, minCluster: 8, growBeams: 12, hold: 10, dynWindow: 1, dynSpatial: 1 },   // tuned on a recorded walk
+    layercal: { on: true, rate: 0.3 },
+    intensity: base.intensity,                                            // content choice: stays yours
+  };
+}
+// noise floor = median σ of steady, established, static beams (quantised to 1 mm so settings don't jitter)
+function autoTune() {
+  if (mode !== "auto") return;
+  if (G && G.frames >= 10) {
+    const s = [];
+    for (let i = 0; i < G.N; i += 3)
+      if (G.nAvg[i] >= 5 && G.jumpRate[i] < 0.1 && G.motionHold[i] === 0 && G.temporal[i] > 0) s.push(Math.sqrt(G.noiseVar[i]));
+    if (s.length > 200) {
+      s.sort((a, b) => a - b);
+      autoNoise = Math.min(0.08, Math.max(0.012, Math.round(s[s.length >> 1] * 1000) / 1000));
+      let moving = 0; for (let i = 0; i < G.N; i++) if (G.motionHold[i] > 0) moving++;
+      autoStats = `noise floor ${Math.round(autoNoise * 1000)} mm (median of ${s.length} steady beams) · ` +
+        `gate 3σ · ${(100 * moving / G.N).toFixed(1)} % moving`;
+    }
+  }
+  cfg = autoCfg(manualCfg);
+}
+let cfg = mode === "auto" ? autoCfg(manualCfg) : structuredClone(manualCfg);
+
+const fmtParam = (p, v) => p.fmt ? p.fmt(v) : p.pct ? `+${(v * 100).toFixed(1)} % of range`
+  : (Number.isInteger(p.step) ? v : v.toFixed(p.step < 0.01 ? 3 : 2)) + (p.unit || "");
+
+function buildStageControls() {
+  const host = $("stages");
+  host.innerHTML = "";
+  for (const s of STAGES) {
+    const det = document.createElement("details");
+    det.className = "stage";
+    det.dataset.key = s.key;
+    const sum = document.createElement("summary");
+    sum.title = s.help;
+    if (s.toggle) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.id = `cfg-${s.key}-on`;
+      cb.addEventListener("click", e => e.stopPropagation());   // don't fold the section
+      cb.addEventListener("change", () => { cfg[s.key].on = cb.checked; changed(); });
+      sum.append(cb);
+    }
+    const name = document.createElement("span");
+    name.className = "name"; name.textContent = s.title;
+    sum.append(name);
+    det.append(sum);
+    const note = document.createElement("div");
+    note.className = "note"; note.textContent = s.help + (s.note ? " " + s.note : "");
+    det.append(note);
+    if (s.extra === "histogram") {
+      const cv = document.createElement("canvas");
+      cv.id = "rssiHist"; cv.width = 480; cv.height = 90;
+      cv.style.cssText = "width:100%;height:45px;display:block;margin:4px 0;border-radius:4px;background:#0d1117";
+      det.append(cv);
+      det.addEventListener("toggle", drawHistogram);
+    }
+    if (s.extra === "layerbias") {
+      const cv = document.createElement("canvas");
+      cv.id = "layerBiasChart"; cv.width = 480; cv.height = 120;
+      cv.style.cssText = "width:100%;height:60px;display:block;margin:4px 0;border-radius:4px;background:#0d1117";
+      const btn = document.createElement("button");
+      btn.textContent = "Reset calibration"; btn.style.marginTop = "4px";
+      btn.onclick = () => { layerBias.fill(0); saveLayerBias(); resetHistory(); drawLayerBias(); };
+      det.append(cv, btn);
+      det.addEventListener("toggle", drawLayerBias);
+    }
+    for (const p of s.params) {
+      const wrap = document.createElement("div");
+      wrap.className = "param";
+      const top = document.createElement("div");
+      top.className = "top";
+      const lab = document.createElement("label"), val = document.createElement("span");
+      lab.htmlFor = `cfg-${s.key}-${p.k}`; lab.textContent = p.label; val.id = `cfg-${s.key}-${p.k}-val`;
+      top.append(lab, val);
+      const inp = document.createElement("input");
+      Object.assign(inp, { type: "range", id: `cfg-${s.key}-${p.k}`, min: p.min, max: p.max, step: p.step });
+      inp.addEventListener("input", () => {
+        cfg[s.key][p.k] = +inp.value;
+        if (s.key === "intensity") {                 // keep min ≤ max
+          if (p.k === "min" && cfg.intensity.max < cfg.intensity.min) cfg.intensity.max = cfg.intensity.min;
+          if (p.k === "max" && cfg.intensity.min > cfg.intensity.max) cfg.intensity.min = cfg.intensity.max;
+        }
+        changed();
+      });
+      wrap.append(top, inp);
+      det.append(wrap);
+    }
+    host.append(det);
+  }
+}
+
+function syncControls() {
+  for (const s of STAGES) {
+    if (s.toggle) $(`cfg-${s.key}-on`).checked = cfg[s.key].on;
+    document.querySelector(`details.stage[data-key="${s.key}"]`).classList.toggle("off", s.toggle && !cfg[s.key].on);
+    for (const p of s.params) {
+      $(`cfg-${s.key}-${p.k}`).value = cfg[s.key][p.k];
+      $(`cfg-${s.key}-${p.k}-val`).textContent = fmtParam(p, cfg[s.key][p.k]);
+    }
+  }
+  const pick = c => JSON.stringify(PRESET_KEYS.map(k => c[k]));
+  const match = Object.keys(PRESETS).find(n => pick(PRESETS[n]) === pick(cfg));
+  $("preset").value = match || "custom";
+  // auto: every stage except the intensity filter is chosen automatically and shown read-only
+  const auto = mode === "auto";
+  $("mode").value = mode;
+  $("preset").disabled = auto; $("resetCfg").hidden = auto;
+  for (const s of STAGES) {
+    const locked = auto && s.key !== "intensity";
+    document.querySelectorAll(`details.stage[data-key="${s.key}"] input`).forEach(el => { el.disabled = locked; });
+  }
+  $("autoInfo").textContent = auto ? "Auto: " + (autoStats || "learning the scene…") +
+    ". Settings below are chosen from the measured noise and motion and update every second; switch to manual to edit." : "";
+  drawHistogram();
+}
+
+let saveTimer = 0;
+function changed() {
+  syncControls();
+  clearTimeout(saveTimer);
+  if (mode === "manual") manualCfg = structuredClone(cfg);
+  else manualCfg.intensity = structuredClone(cfg.intensity);       // intensity stays user-controlled in auto
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify({ mode, manual: manualCfg })); } catch (e) {} }, 300);
+  rebuild();
+}
+function applyPreset(name) {
+  cfg = { ...structuredClone(PRESETS[name]), intensity: cfg.intensity, layercal: cfg.layercal, adaptive: cfg.adaptive };   // presets leave filters/calibration/adaptivity alone
+  resetHistory();                                                          // start averaging afresh
+  changed();
+}
+
+// RSSI histogram of the latest scan with the kept range highlighted
+let rssiHist = null;
+function drawHistogram() {
+  const cv = $("rssiHist");
+  if (!cv || !rssiHist || !cv.closest("details").open) return;
+  const ctx = cv.getContext("2d"), W = cv.width, H = cv.height, n = rssiHist.length;
+  const peak = Math.max(1, ...rssiHist);
+  ctx.clearRect(0, 0, W, H);
+  const lo = cfg.intensity.min, hi = cfg.intensity.max, on = cfg.intensity.on;
+  for (let i = 0; i < n; i++) {
+    const v = i * 400 / n, kept = !on || (v >= lo && v <= hi);
+    const h = Math.max(rssiHist[i] ? 2 : 0, Math.sqrt(rssiHist[i] / peak) * (H - 4));   // sqrt: small bins stay visible
+    ctx.fillStyle = kept ? "#4aa3ff" : "#3a4250";
+    ctx.fillRect(i * W / n, H - h, W / n - 1, h);
+  }
+}
+
+buildStageControls();
+syncControls();
+$("preset").addEventListener("change", e => applyPreset(e.target.value));
+$("mode").addEventListener("change", e => {
+  mode = e.target.value;
+  if (mode === "auto") autoTune(); else cfg = structuredClone(manualCfg);
+  changed();
+});
+$("resetCfg").onclick = () => { cfg.intensity = { ...DEFAULT_INTENSITY }; cfg.layercal = { ...DEFAULT_LAYERCAL }; cfg.adaptive = { ...DEFAULT_ADAPTIVE }; applyPreset("medium"); };
+
+const onUi = (id, key, parse, after) => {
+  const el = $(id);
+  el.addEventListener(el.type === "range" ? "input" : "change", () => {
+    ui[key] = parse(el.type === "checkbox" ? el.checked : el.value);
+    if (after) after();
+    rebuild();
+  });
+};
+onUi("draw", "draw", String, applyVisibility);
+onUi("colorBy", "colorBy", String, () => $("legendBox").classList.toggle("hidden", ui.colorBy === "uniform"));
+onUi("layerSel", "layer", Number);
+onUi("range", "maxRange", Number, () => { $("rangeVal").textContent = ui.maxRange + " m"; buildGuides(Math.min(ui.maxRange, 200)); });
+onUi("mount", "mount", String, () => { mountChosen = true; try { localStorage.setItem("mrs6000.mount.v2", ui.mount); } catch (e) {} buildGuides(Math.min(ui.maxRange, 200)); });
+$("mount").value = ui.mount;
+$("size").oninput = e => { pointMat.size = +e.target.value; needsRender = true; render2d(); };
+$("rangeVal").textContent = ui.maxRange + " m";
+$("pause").onclick = togglePause;
+window.addEventListener("keydown", e => { if (e.code === "Space" && e.target === document.body) { e.preventDefault(); togglePause(); } });
+function togglePause() { ui.paused = !ui.paused; $("pause").classList.toggle("on", ui.paused); $("pause").textContent = ui.paused ? "Resume" : "Pause"; }
+
+// view size follows the data: 90th percentile of the visible distances (falls back to max range)
+let viewDist = 0;
+// side and front views keep the camera level (no pitch), so vertical edges stay vertical on screen —
+// a tilted camera makes vertical walls look like they lean in perspective
+function setView(kind) {
+  const d = Math.max(2, Math.min(viewDist || ui.maxRange, ui.maxRange, 40));
+  controls.target.set(d * 0.35, 0, 0);
+  if (kind === "top") camera.position.set(d * 0.35, 0, d * 1.6);
+  else if (kind === "side") camera.position.set(d * 0.35, -d * 1.4, 0);
+  else if (kind === "front") { camera.position.set(-2.5, 0, 0); controls.target.set(d, 0, 0); }
+  else camera.position.set(-d * 0.5, -d * 0.6, d * 0.6);
+  controls.update();
+  needsRender = true;
+}
+$("vFront").onclick = () => setView("front");
+$("vPersp").onclick = () => setView("persp");
+$("vTop").onclick = () => setView("top");
+$("vSide").onclick = () => setView("side");
+
+// ---------- layer calibration (per-layer distance offsets) ----------
+// Learned offsets in metres, added to every raw distance of that layer before filtering.
+let layerBias = new Float32Array(24), calFrame = 0;
+const BIAS_KEY = "mrs6000.layerbias.v2";           // v1 values could contain the drift fixed below
+try { const b = JSON.parse(localStorage.getItem(BIAS_KEY) || "null"); if (Array.isArray(b)) { layerBias = Float32Array.from(b); removeUnobservable(layerBias); } } catch (e) {}
+try { localStorage.removeItem("mrs6000.layerbias.v1"); } catch (e) {}
+function saveLayerBias() { try { localStorage.setItem(BIAS_KEY, JSON.stringify(Array.from(layerBias))); } catch (e) {} }
+
+// Leave-own-layer-out plane fits on the (temporally averaged, already corrected) range image:
+// for points on flat surfaces, fit a plane through the neighbouring layers only (±2 layers,
+// ±6 beams) and measure along the beam how far this layer's point is from it. The median of
+// that per layer is its remaining offset; we move the offset a fraction `rate` towards it.
+function updateLayerBias(D) {
+  const { L, B, rayX, rayY, rayZ } = G, nrm = [0, 0, 0];
+  const per = Array.from({ length: L }, () => []);
+  for (let l = 0; l < L; l++) for (let b = 6; b < B - 6; b += 2) {
+    const i = l * B + b, d = D[i];
+    if (d <= 0) continue;
+    const tol = 0.15 + 0.03 * d;
+    let n = 0, sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, sxz = 0, syy = 0, syz = 0, szz = 0;
+    for (let ll = Math.max(0, l - 2); ll <= Math.min(L - 1, l + 2); ll++) {
+      if (ll === l) continue;
+      for (let bb = b - 6; bb <= b + 6; bb++) {
+        const j = ll * B + bb, v = D[j];
+        if (v <= 0 || Math.abs(v - d) > tol) continue;
+        const x = rayX[j] * v, y = rayY[j] * v, z = rayZ[j] * v;
+        n++; sx += x; sy += y; sz += z; sxx += x * x; sxy += x * y; sxz += x * z; syy += y * y; syz += y * z; szz += z * z;
+      }
+    }
+    if (n < 20) continue;
+    const cx = sx / n, cy = sy / n, cz = sz / n;
+    const v = smallestEigenvector(sxx / n - cx * cx, sxy / n - cx * cy, sxz / n - cx * cz, syy / n - cy * cy, syz / n - cy * cz, szz / n - cz * cz, nrm);
+    if (v < 0 || v > 0.03) continue;                                   // only flat patches
+    const nr = nrm[0] * rayX[i] + nrm[1] * rayY[i] + nrm[2] * rayZ[i];
+    if (Math.abs(nr) < 0.3) continue;                                   // not too grazing
+    const r = (nrm[0] * cx + nrm[1] * cy + nrm[2] * cz) / nr - d;
+    if (Math.abs(r) < 0.1) per[l].push(r);
+  }
+  const upd = per.map(a => { if (a.length < 20) return null; a.sort((x, y) => x - y); return a[a.length >> 1]; });
+  const known = upd.filter(x => x !== null);
+  if (known.length < L / 2) return false;                               // not enough flat surfaces in view
+  const mean = known.reduce((a, x) => a + x, 0) / known.length;
+  for (let l = 0; l < L; l++) if (upd[l] !== null) layerBias[l] += cfg.layercal.rate * (upd[l] - mean);
+  removeUnobservable(layerBias);
+  saveLayerBias();
+  drawLayerBias();
+  return true;
+}
+
+// Plane fits through neighbouring layers cannot see a constant offset (it only moves everything)
+// or an offset growing linearly from bottom to top (it only tilts every surface, and the
+// neighbour planes tilt along with it), and barely see a slow bow (≈1 mm signal). Left free, these
+// drift with every update: the linear part turned vertical walls into walls leaning 15°+ after
+// ~10 min, the bow settled at ~8 cm. So the offsets are kept orthogonal to all polynomials up to
+// degree 2 in the layer index — the real per-layer pattern (period ≈ 6 layers) is untouched.
+function removeUnobservable(b) {
+  const L = b.length, basis = [];
+  for (let deg = 0; deg <= 2; deg++) {                    // Gram–Schmidt on 1, l, l²
+    const v = Float64Array.from({ length: L }, (_, l) => ((l - (L - 1) / 2) / L) ** deg);
+    for (const u of basis) { let d = 0; for (let l = 0; l < L; l++) d += v[l] * u[l]; for (let l = 0; l < L; l++) v[l] -= d * u[l]; }
+    let n = 0; for (let l = 0; l < L; l++) n += v[l] * v[l]; n = Math.sqrt(n);
+    for (let l = 0; l < L; l++) v[l] /= n;
+    basis.push(v);
+  }
+  for (const u of basis) { let d = 0; for (let l = 0; l < L; l++) d += b[l] * u[l]; for (let l = 0; l < L; l++) b[l] -= d * u[l]; }
+}
+
+function drawLayerBias() {
+  const cv = $("layerBiasChart");
+  if (!cv || !cv.closest("details").open) return;
+  const ctx = cv.getContext("2d"), W = cv.width, H = cv.height, L = layerBias.length;
+  const span = Math.max(0.02, ...Array.from(layerBias, Math.abs));
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#2a313c"; ctx.fillRect(0, H / 2, W, 1);
+  for (let l = 0; l < L; l++) {
+    const v = layerBias[l], h = v / span * (H / 2 - 14);
+    ctx.fillStyle = v >= 0 ? "#4aa3ff" : "#d29922";
+    ctx.fillRect(l * W / L + 2, h >= 0 ? H / 2 - h : H / 2, W / L - 4, Math.abs(h));
+  }
+  ctx.fillStyle = "#8b95a3"; ctx.font = "20px system-ui";
+  ctx.fillText(`±${Math.round(span * 1000)} mm   layer 0 → ${L - 1}`, 6, 22);
+}
+
+// ---------- organized grid & GPU buffers ----------
+// The scan is a range image: L layers (rows, bottom→top) × B beams (columns, right→left).
+// Vertex index = layer * B + beam. Points, layer lines and the triangle mesh all share
+// one position/colour/normal buffer and differ only in their index buffers.
+let G = null;                               // grid state, (re)allocated when the shape changes
+const pointMat = new THREE.PointsMaterial({ size: 1, sizeAttenuation: false, vertexColors: true });
+const lineMat = new THREE.LineBasicMaterial({ vertexColors: true });
+const meshMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+let pointsObj, linesObj, meshObj;
+
+function allocGrid(L, B) {
+  const N = L * B;
+  for (const o of [pointsObj, linesObj, meshObj]) if (o) { scene.remove(o); o.geometry.dispose(); }
+  G = {
+    L, B, N,
+    rawIn: new Float32Array(N), raw: new Float32Array(N), rssi: new Float32Array(N), elev: new Float32Array(N),
+    // per-beam history (see stage 2): estimate, samples in average, learned noise variance,
+    // pending change candidate, dropout age, validity bits of the last 32 scans, jump rate
+    temporal: new Float32Array(N), nAvg: new Uint16Array(N), noiseVar: new Float32Array(N),
+    cand: new Float32Array(N), candCnt: new Uint8Array(N), age: new Uint8Array(N),
+    validBits: new Uint32Array(N), jumpRate: new Float32Array(N), frames: 0,
+    hist: new Float32Array(N), conf: new Float32Array(N),         // history-filtered ranges + confidence weights
+    alt: new Float32Array(N), altN: new Uint16Array(N),           // second background mode (edges: near/far surface)
+    changed: new Uint8Array(N), motionHold: new Uint8Array(N),    // adaptive: per-scan change flags, frames left "moving"
+    area: new Uint8Array(N),                                       // 0 static flat · 1 static detail · 2 moving
+    work: new Float32Array(N), out: new Float32Array(N),           // filter scratch buffers
+    rayX: new Float32Array(N), rayY: new Float32Array(N), rayZ: new Float32Array(N),
+    pos: new THREE.BufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage),
+    col: new THREE.BufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage),
+    nrm: new THREE.BufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage),
+    pIdx: new Uint32Array(N), lIdx: new Uint32Array(N * 2), tIdx: new Uint32Array(N * 6),
+  };
+  const mk = (idx, withNormals) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", G.pos); g.setAttribute("color", G.col);
+    if (withNormals) g.setAttribute("normal", G.nrm);
+    g.setIndex(new THREE.BufferAttribute(idx, 1).setUsage(THREE.DynamicDrawUsage));
+    g.setDrawRange(0, 0);
+    return g;
+  };
+  pointsObj = new THREE.Points(mk(G.pIdx), pointMat);
+  linesObj = new THREE.LineSegments(mk(G.lIdx), lineMat);
+  meshObj = new THREE.Mesh(mk(G.tIdx, true), meshMat);
+  for (const o of [meshObj, linesObj, pointsObj]) { o.frustumCulled = false; scene.add(o); }
+  applyVisibility();
+}
+
+function applyVisibility() {
+  needsRender = true;
+  if (!G) return;
+  meshObj.visible = ui.draw.startsWith("surface");
+  pointsObj.visible = ui.draw.includes("points");
+  linesObj.visible = ui.draw.includes("lines");
+}
+
+// distance tolerance used everywhere for "same surface": absolute part covers the 62.5 mm
+// range quantisation, relative part grows with range
+const sameTol = (d, abs, rel) => abs + rel * d;
+
+// ---------- stage 1: outlier rejection (on the raw scan) ----------
+// A return survives if enough azimuth neighbours in its layer lie at a similar distance:
+// isolated spikes and mixed pixels go, object edges (supported on one side) stay.
+function rejectOutliers(src, dst) {
+  const { L, B } = G, c = cfg.outlier;
+  let removed = 0;
+  for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
+    const i = l * B + b, d = src[i];
+    dst[i] = d;
+    if (!c.on || d <= 0) continue;
+    // moving bodies have real depth jumps between neighbouring beams (limbs, silhouettes):
+    // there one similar neighbour within a 3× wider tolerance is enough
+    const moving = isMoving(i) || (cfg.adaptive.on && G.changed[i] === 1);   // also beams that changed this scan
+    const tol = sameTol(d, c.abs, c.rel) * (moving ? 3 : 1), need = moving ? 1 : c.need;
+    let support = 0;
+    for (let k = Math.max(0, b - c.win); k <= Math.min(B - 1, b + c.win); k++) {
+      if (k !== b && src[l * B + k] > 0 && Math.abs(src[l * B + k] - d) <= tol) support++;
+    }
+    if (support < need) { dst[i] = 0; removed++; }
+  }
+  return removed;
+}
+
+// ---------- stage 2: temporal smoothing (per-beam history, Kalman-style) ----------
+// Each beam keeps a running mean whose window grows while the beam stays still (up to
+// `window` scans), i.e. a 1D Kalman filter for a constant distance. Every beam also learns its
+// own measurement noise σ (EMA of squared innovations, never below `noiseFloor`), so the
+// change gate is k·σ of *this* beam rather than one global threshold. A sample outside the
+// gate does not reset the beam at once: it becomes a candidate, and only when `confirm`
+// consecutive samples agree on it does the beam switch (real motion). Lone spikes are ignored.
+const NOISE_BETA = 0.05, JUMP_BETA = 0.1;
+function resetHistory() {
+  if (!G) return;
+  for (const a of [G.temporal, G.nAvg, G.noiseVar, G.cand, G.candCnt, G.age, G.validBits, G.jumpRate, G.alt, G.altN, G.changed, G.motionHold, G.area]) a.fill(0);
+  G.frames = 0;
+}
+// ---------- adaptive: motion detection (before the temporal update) ----------
+// Follows per-beam background subtraction for static LiDARs (beam-wise statistical models with a
+// z-gate |r−μ|/σ ≤ k, multi-modal backgrounds) and Dynablox's conservative rules:
+//  • a beam only reports change once its model is established (≥ 5 of the last scans valid),
+//  • a return matching either of the beam's two background modes is NOT a change — edge beams that
+//    alternate between a near and a far surface are background, not motion,
+//  • changed beams are grouped into connected clusters (8-neighbourhood, similar range); clusters
+//    smaller than `minCluster` beams are noise and dropped,
+//  • surviving clusters seed a region grow through neighbouring beams of similar range (the rest of
+//    the object), limited to `growBeams` steps and never into beams that match their own established
+//    background (so it can't leak along a wall); grown beams stay "moving" for `hold` scans.
+const ESTABLISHED = 5;
+let motionQueue = new Int32Array(0), motionMark = new Uint8Array(0);
+function beamGate(i) {
+  const ct = cfg.temporal, s = Math.sqrt(G.noiseVar[i] * (1 + 1 / Math.max(1, G.nAvg[i])));
+  return Math.max(ct.minGate, ct.k * s);
+}
+// does z match this beam's established background (either mode)? then it is static, whatever its neighbours do
+function isBackground(i, z) {
+  if (G.nAvg[i] < ESTABLISHED && G.altN[i] < ESTABLISHED) return false;
+  const g = beamGate(i);
+  return (G.nAvg[i] >= ESTABLISHED && Math.abs(z - G.temporal[i]) <= g) || (G.altN[i] >= ESTABLISHED && Math.abs(z - G.alt[i]) <= g);
+}
+function detectMotion(cur) {
+  const a = cfg.adaptive, { L, B, N, temporal: T, alt, altN, changed, motionHold, validBits } = G;
+  for (let i = 0; i < N; i++) if (motionHold[i] > 0) motionHold[i]--;
+  changed.fill(0);
+  if (!a.on || G.frames < ESTABLISHED) return 0;
+  for (let i = 0; i < N; i++) {
+    const z = cur[i];
+    if (z <= 0 || popcount(validBits[i] & 0x3f) < ESTABLISHED) continue;     // model not established
+    const g = beamGate(i);
+    const matchT = T[i] > 0 && Math.abs(z - T[i]) <= g, matchAlt = alt[i] > 0 && altN[i] >= 3 && Math.abs(z - alt[i]) <= g;
+    if (!matchT && !matchAlt) changed[i] = 1;
+  }
+  if (motionQueue.length !== N) { motionQueue = new Int32Array(N); motionMark = new Uint8Array(N); }
+  const Q = motionQueue, mark = motionMark;
+  mark.fill(0);
+  const same = (p, q) => Math.abs(cur[p] - cur[q]) <= 0.15 + 0.03 * cur[p];
+  let seeds = 0;
+  for (let s0 = 0; s0 < N; s0++) {
+    if (!changed[s0] || mark[s0]) continue;
+    // 1) connected cluster of changed beams
+    let head = 0, tail = 0;
+    Q[tail++] = s0; mark[s0] = 1;
+    while (head < tail) {
+      const p = Q[head++], l = (p / B) | 0, b = p - l * B;
+      for (let dl = -1; dl <= 1; dl++) for (let db = -1; db <= 1; db++) {
+        const ll = l + dl, bb = b + db;
+        if (ll < 0 || ll >= L || bb < 0 || bb >= B) continue;
+        const q = ll * B + bb;
+        if (changed[q] && !mark[q] && same(p, q)) { mark[q] = 1; Q[tail++] = q; }
+      }
+    }
+    if (tail < a.minCluster) continue;                                          // too small: noise
+    seeds++;
+    // 2) grow into the rest of the object (similar range), `growBeams` rings deep
+    let ringStart = 0, ringEnd = tail;
+    for (let k = 0; k < tail; k++) motionHold[Q[k]] = a.hold;
+    for (let depth = 0; depth < a.growBeams && ringStart < ringEnd; depth++) {
+      for (let h = ringStart; h < ringEnd; h++) {
+        const p = Q[h], l = (p / B) | 0, b = p - l * B;
+        for (let dl = -1; dl <= 1; dl++) for (let db = -1; db <= 1; db++) {
+          const ll = l + dl, bb = b + db;
+          if (ll < 0 || ll >= L || bb < 0 || bb >= B) continue;
+          const q = ll * B + bb;
+          if (mark[q] || cur[q] <= 0 || !same(p, q) || isBackground(q, cur[q])) continue;   // never absorb static background
+          mark[q] = 2; Q[tail++] = q; motionHold[q] = a.hold;
+        }
+      }
+      ringStart = ringEnd; ringEnd = tail;
+    }
+  }
+  return seeds;
+}
+const isMoving = i => cfg.adaptive.on && G.motionHold[i] > 0;
+
+function temporalUpdate(cur) {
+  const c = cfg.temporal, on = c.on, hold = on ? c.hold : 0, staticN = on ? c.window : 1;
+  const dynN = Math.min(staticN, cfg.adaptive.dynWindow);
+  const floor2 = c.noiseFloor * c.noiseFloor;
+  const { temporal: T, nAvg, noiseVar: R, cand, candCnt, age, validBits, jumpRate, alt, altN } = G;
+  for (let i = 0; i < G.N; i++) {
+    const z = cur[i];
+    validBits[i] = ((validBits[i] << 1) | (z > 0 ? 1 : 0)) >>> 0;
+    if (z <= 0) {                                         // dropout: hold, then forget
+      if (age[i] < 255) age[i]++;
+      if (age[i] > hold) { T[i] = 0; nAvg[i] = 0; candCnt[i] = 0; }
+      continue;
+    }
+    age[i] = 0;
+    const moving = isMoving(i), maxN = moving ? dynN : staticN, confirm = moving ? 1 : c.confirm;
+    if (moving && nAvg[i] > maxN) nAvg[i] = maxN;          // forget the long average at once
+    if (T[i] <= 0 || nAvg[i] === 0) {                     // first sample of this beam
+      T[i] = z; nAvg[i] = 1; R[i] = Math.max(R[i], floor2); candCnt[i] = 0;
+      continue;
+    }
+    const gate = beamGate(i);
+    // second background mode (multi-modal background): the beam came back to a surface it knew →
+    // swap modes instantly, no confirmation delay and not counted as a jump
+    if (on && alt[i] > 0 && altN[i] >= 2 && Math.abs(z - T[i]) > gate && Math.abs(z - alt[i]) <= gate) {
+      const t = T[i], n = nAvg[i];
+      T[i] = alt[i]; nAvg[i] = Math.min(altN[i], maxN); alt[i] = t; altN[i] = n;
+    }
+    const v = z - T[i];
+    if (Math.abs(v) <= gate) {                            // consistent: extend the average
+      const n = Math.min(nAvg[i] + 1, maxN);
+      nAvg[i] = n;
+      T[i] += v / n;
+      R[i] = Math.max(floor2, R[i] + NOISE_BETA * (v * v - R[i]));
+      jumpRate[i] *= 1 - JUMP_BETA;
+      candCnt[i] = 0;
+    } else {                                              // unknown value: candidate for a change
+      jumpRate[i] += JUMP_BETA * (1 - jumpRate[i]);
+      if (candCnt[i] > 0 && Math.abs(z - cand[i]) <= gate) {
+        candCnt[i]++; cand[i] += (z - cand[i]) / candCnt[i];
+      } else { cand[i] = z; candCnt[i] = 1; }
+      if (!on || candCnt[i] >= confirm) {                 // confirmed → follow; old surface becomes the 2nd mode
+        if (nAvg[i] >= 3) { alt[i] = T[i]; altN[i] = nAvg[i]; }
+        T[i] = cand[i]; nAvg[i] = candCnt[i]; candCnt[i] = 0;
+      }
+    }
+  }
+}
+
+// ---------- stage 2b: history filter + confidence ----------
+// From the last 32 scans: valid ratio and jump rate. Beams that are rarely valid or keep
+// jumping are dropped; the rest get a confidence weight that later stages multiply into
+// their neighbour weights (stable, low-noise beams count more).
+const popcount = x => { x -= (x >>> 1) & 0x55555555; x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return (((x + (x >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24; };
+function historyFilter(src, dst) {
+  const c = cfg.history, { N, validBits, jumpRate, noiseVar, conf } = G;
+  const mask = G.frames >= 32 ? 0xffffffff : ((1 << G.frames) - 1) >>> 0;
+  const floor2 = cfg.temporal.noiseFloor ** 2;
+  let dropped = 0;
+  for (let i = 0; i < N; i++) {
+    const d = src[i];
+    dst[i] = d; conf[i] = 1;
+    if (d <= 0 || !c.on || isMoving(i)) continue;          // moving objects flicker by nature: keep them
+    const valid = popcount(validBits[i] & mask) / Math.max(1, G.frames);
+    if (valid < c.minValid || jumpRate[i] > c.maxJump) { dst[i] = 0; dropped++; continue; }
+    if (c.weight > 0) {
+      const quality = valid * (1 - jumpRate[i]) * floor2 / Math.max(floor2, noiseVar[i]);   // 1 = always valid, steady, at the noise floor
+      conf[i] = Math.pow(Math.max(1e-3, quality), c.weight);
+    }
+  }
+  return dropped;
+}
+
+// ---------- stage 3: spatial smoothing (bilateral filter on the range image) ----------
+// Weighted mean of neighbouring ranges: weight falls off with pixel distance (spatial term)
+// and with range difference (range term), so surfaces are smoothed but depth edges are kept.
+function bilateral(src, dst) {
+  const c = cfg.spatial, { L, B } = G;
+  if (!c.on) { dst.set(src); return; }
+  const sb = Math.max(1, c.wb / 2), sl = 1;
+  for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
+    const i = l * B + b, d = src[i];
+    if (d <= 0) { dst[i] = 0; continue; }
+    const moving = isMoving(i), wb = moving ? Math.min(c.wb, cfg.adaptive.dynSpatial) : c.wb, wl = moving ? 0 : c.wl;
+    if (wb === 0 && wl === 0) { dst[i] = d; continue; }
+    const sr = Math.max(sameTol(d, c.srAbs, c.srRel), c.srNoise * Math.sqrt(G.noiseVar[i])), cut = 3 * sr;
+    let ws = 0, acc = 0;
+    for (let dl = -wl; dl <= wl; dl++) {
+      const ll = l + dl;
+      if (ll < 0 || ll >= L) continue;
+      for (let db = -wb; db <= wb; db++) {
+        const bb = b + db;
+        if (bb < 0 || bb >= B) continue;
+        const j = ll * B + bb, v = src[j];
+        if (v <= 0 || Math.abs(v - d) > cut) continue;
+        const w = G.conf[j] * Math.exp(-(db * db) / (2 * sb * sb) - (dl * dl) / (2 * sl * sl) - ((v - d) * (v - d)) / (2 * sr * sr));
+        ws += w; acc += w * v;
+      }
+    }
+    dst[i] = acc / ws;
+  }
+}
+
+// ---------- stage 4: plane flattening (local PCA plane fit, an MLS-style projection) ----------
+// For each point: gather same-surface neighbours in a window, fit a plane (smallest
+// eigenvector of the covariance), and if the patch is planar enough move the point along
+// its own laser ray onto that plane. Flat walls/floors become flat; curved or cluttered
+// patches fail the planarity test and are left alone.
+
+function smallestEigenvector(xx, xy, xz, yy, yz, zz, out) {
+  // eigenvalues of a symmetric 3x3 matrix (trigonometric method), then the eigenvector of
+  // the smallest one as the largest cross product of two rows of (A - λI)
+  const p1 = xy * xy + xz * xz + yz * yz, q = (xx + yy + zz) / 3;
+  const p2 = (xx - q) ** 2 + (yy - q) ** 2 + (zz - q) ** 2 + 2 * p1;
+  const p = Math.sqrt(p2 / 6);
+  if (p < 1e-12) return -1;
+  const b11 = (xx - q) / p, b22 = (yy - q) / p, b33 = (zz - q) / p, b12 = xy / p, b13 = xz / p, b23 = yz / p;
+  const r = Math.max(-1, Math.min(1, (b11 * (b22 * b33 - b23 * b23) - b12 * (b12 * b33 - b23 * b13) + b13 * (b12 * b23 - b22 * b13)) / 2));
+  const phi = Math.acos(r) / 3;
+  const e1 = q + 2 * p * Math.cos(phi), e3 = q + 2 * p * Math.cos(phi + 2 * Math.PI / 3);
+  const lam = e3;                                   // smallest
+  const r0 = [xx - lam, xy, xz], r1 = [xy, yy - lam, yz], r2 = [xz, yz, zz - lam];
+  const cr = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  let best = null, bn = 0;
+  for (const c of [cr(r0, r1), cr(r0, r2), cr(r1, r2)]) {
+    const n = c[0] * c[0] + c[1] * c[1] + c[2] * c[2];
+    if (n > bn) { bn = n; best = c; }
+  }
+  if (bn < 1e-24) return -1;
+  const s = 1 / Math.sqrt(bn);
+  out[0] = best[0] * s; out[1] = best[1] * s; out[2] = best[2] * s;
+  return lam / Math.max(1e-12, xx + yy + zz);       // surface variation ("curvature")
+}
+
+function flattenPlanes(src, dst) {
+  const c = cfg.planes, { L, B, rayX, rayY, rayZ, area } = G;
+  for (let i = 0; i < G.N; i++) area[i] = isMoving(i) ? 2 : 1;      // default: static detail
+  if (!c.on) { dst.set(src); return; }
+  const nrm = [0, 0, 0];
+  for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
+    const i = l * B + b, d = src[i];
+    dst[i] = d;
+    if (d <= 0 || area[i] === 2) continue;                 // moving areas are not flattened
+    const tol = sameTol(d, c.tolAbs, c.tolRel);
+    let n = 0, W = 0, sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, sxz = 0, syy = 0, syz = 0, szz = 0;
+    for (let ll = Math.max(0, l - c.wl); ll <= Math.min(L - 1, l + c.wl); ll++) {
+      for (let bb = Math.max(0, b - c.wb); bb <= Math.min(B - 1, b + c.wb); bb++) {
+        const j = ll * B + bb, v = src[j];
+        if (v <= 0 || Math.abs(v - d) > tol) continue;
+        const x = rayX[j] * v, y = rayY[j] * v, z = rayZ[j] * v;
+        const w = G.conf[j];                             // confidence-weighted PCA
+        n++; W += w; sx += w * x; sy += w * y; sz += w * z;
+        sxx += w * x * x; sxy += w * x * y; sxz += w * x * z; syy += w * y * y; syz += w * y * z; szz += w * z * z;
+      }
+    }
+    if (n < c.minPts) continue;
+    if (W <= 0) continue;
+    const cx = sx / W, cy = sy / W, cz = sz / W;
+    const variation = smallestEigenvector(sxx / W - cx * cx, sxy / W - cx * cy, sxz / W - cx * cz,
+                                          syy / W - cy * cy, syz / W - cy * cz, szz / W - cz * cz, nrm);
+    if (variation < 0) continue;
+    if (c.noiseFlat > 0) {                                  // flat = residual within the sensor noise
+      const trace = (sxx + syy + szz) / W - (cx * cx + cy * cy + cz * cz);
+      if (Math.sqrt(Math.max(0, variation * trace)) > c.noiseFlat * cfg.temporal.noiseFloor) continue;
+    } else if (variation > c.planarity) continue;
+    area[i] = 0;                                            // static & flat
+    // intersect this beam's ray with the fitted plane: t·(n·ray) = n·centroid
+    const nr = nrm[0] * rayX[i] + nrm[1] * rayY[i] + nrm[2] * rayZ[i];
+    if (Math.abs(nr) < c.minCos) continue;              // grazing incidence: unstable
+    const t = (nrm[0] * cx + nrm[1] * cy + nrm[2] * cz) / nr;
+    if (t > 0 && Math.abs(t - d) <= tol) dst[i] = t;
+  }
+}
+
+const AREA_COLORS = [[0.29, 0.64, 1.0], [0.25, 0.73, 0.31], [0.97, 0.32, 0.29]];   // flat · detail · moving
+
+// ---------- stage 5: geometry (points, layer lines, mesh) ----------
+let lastStats = { removed: 0 };
+function buildGeometry(D) {
+  const { L, B, N, rayX, rayY, rayZ } = G;
+  const P = G.pos.array, C = G.col.array, Nn = G.nrm.array;
+  const vis = new Uint8Array(N);
+  const vals = new Float32Array(N);
+  let np = 0, nl = 0, nt = 0;
+  const jumpOk = (a, b) => Math.abs(D[a] - D[b]) <= sameTol(Math.min(D[a], D[b]), cfg.mesh.jump, cfg.mesh.jumpRel);
+
+  for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
+    const i = l * B + b, d = D[i];
+    const ok = d > 0 && d <= ui.maxRange && (ui.layer < 0 || ui.layer === l);
+    vis[i] = ok;
+    if (!ok) continue;
+    P[3 * i] = rayX[i] * d; P[3 * i + 1] = rayY[i] * d; P[3 * i + 2] = rayZ[i] * d;
+    vals[i] = ui.colorBy === "area" ? G.area[i] : ui.colorBy === "rssi" ? G.rssi[i] : ui.colorBy === "dist" ? d : ui.colorBy === "height" ? P[3 * i + 2]
+      : ui.colorBy === "noise" ? Math.sqrt(G.noiseVar[i]) * 1000 : ui.colorBy === "conf" ? G.conf[i] : l;
+    G.pIdx[np++] = i;
+    if (b > 0 && vis[i - 1] && jumpOk(i, i - 1)) { G.lIdx[2 * nl] = i - 1; G.lIdx[2 * nl + 1] = i; nl++; }
+  }
+
+  // organized fast mesh: each grid cell (two beams × two layers) becomes up to two triangles,
+  // split along the shorter diagonal; triangles spanning a depth jump are dropped
+  Nn.fill(0);
+  const addTri = (a, b, c) => {
+    G.tIdx[3 * nt] = a; G.tIdx[3 * nt + 1] = b; G.tIdx[3 * nt + 2] = c; nt++;
+    const ax = P[3 * a], ay = P[3 * a + 1], az = P[3 * a + 2];
+    const ux = P[3 * b] - ax, uy = P[3 * b + 1] - ay, uz = P[3 * b + 2] - az;
+    const vx = P[3 * c] - ax, vy = P[3 * c + 1] - ay, vz = P[3 * c + 2] - az;
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;   // area-weighted
+    for (const k of [a, b, c]) { Nn[3 * k] += nx; Nn[3 * k + 1] += ny; Nn[3 * k + 2] += nz; }
+  };
+  for (let l = 0; l < L - 1; l++) for (let b = 0; b < B - 1; b++) {
+    const a = l * B + b, r = a + 1, u = a + B, ur = u + 1;
+    const diag1 = vis[a] && vis[ur] && jumpOk(a, ur);    // a–ur diagonal
+    const diag2 = vis[r] && vis[u] && jumpOk(r, u);      // r–u diagonal
+    const useFirst = diag1 && (!diag2 || Math.abs(D[a] - D[ur]) <= Math.abs(D[r] - D[u]));
+    if (useFirst) {
+      if (vis[r] && jumpOk(a, r) && jumpOk(r, ur)) addTri(a, r, ur);
+      if (vis[u] && jumpOk(a, u) && jumpOk(u, ur)) addTri(a, ur, u);
+    } else if (diag2) {
+      if (vis[a] && jumpOk(a, r) && jumpOk(a, u)) addTri(a, r, u);
+      if (vis[ur] && jumpOk(r, ur) && jumpOk(u, ur)) addTri(r, ur, u);
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    const x = Nn[3 * i], y = Nn[3 * i + 1], z = Nn[3 * i + 2], s = Math.hypot(x, y, z);
+    if (s > 0) { Nn[3 * i] = x / s; Nn[3 * i + 1] = y / s; Nn[3 * i + 2] = z / s; }
+    else { Nn[3 * i] = -rayX[i]; Nn[3 * i + 1] = -rayY[i]; Nn[3 * i + 2] = -rayZ[i]; }
+  }
+
+  // colours (robust 2nd..98th percentile scaling)
+  let lo = 0, hi = 1;
+  if (ui.colorBy === "layer") { lo = 0; hi = L - 1; }
+  else if (ui.colorBy === "conf") { lo = 0; hi = 1; }
+  else if (ui.colorBy !== "uniform" && np) {
+    const step = Math.max(1, Math.floor(np / 4000)), s = [];
+    for (let k = 0; k < np; k += step) s.push(vals[G.pIdx[k]]);
+    s.sort((x, y) => x - y);
+    lo = s[Math.floor(s.length * 0.02)]; hi = s[Math.floor(s.length * 0.98)];
+    if (hi <= lo) hi = lo + 1;
+  }
+  for (let k = 0; k < np; k++) {
+    const i = G.pIdx[k];
+    const [r, g, b] = ui.colorBy === "uniform" ? [0.78, 0.8, 0.83] : ui.colorBy === "area" ? AREA_COLORS[vals[i]]
+      : turbo((vals[i] - lo) / (hi - lo));
+    C[3 * i] = r; C[3 * i + 1] = g; C[3 * i + 2] = b;
+  }
+  const unit = { rssi: "", dist: " m", height: " m", layer: "", uniform: "", noise: " mm", conf: "" }[ui.colorBy];
+  const fmt = v => ui.colorBy === "dist" || ui.colorBy === "height" ? v.toFixed(1) : ui.colorBy === "conf" ? v.toFixed(2) : Math.round(v);
+  const isArea = ui.colorBy === "area", sw = c => `<span style="color:rgb(${c.map(v => v * 255 | 0)})">■</span>`;
+  $("legend").style.visibility = isArea ? "hidden" : "";
+  if (isArea) {
+    let n = [0, 0, 0];
+    for (let k = 0; k < np; k++) n[G.area[G.pIdx[k]]]++;
+    $("legMin").innerHTML = `${sw(AREA_COLORS[0])} flat ${n[0]}  ${sw(AREA_COLORS[1])} detail ${n[1]}`;
+    $("legMax").innerHTML = `${sw(AREA_COLORS[2])} moving ${n[2]}`;
+  } else { $("legMin").textContent = fmt(lo) + unit; $("legMax").textContent = fmt(hi) + unit; }
+
+  pointsObj.geometry.setDrawRange(0, np);
+  G.np = np; G.nl = nl; G.vis = vis;
+  linesObj.geometry.setDrawRange(0, nl * 2);
+  meshObj.geometry.setDrawRange(0, nt * 3);
+  for (const o of [pointsObj, linesObj, meshObj]) o.geometry.index.needsUpdate = true;
+  G.pos.needsUpdate = G.col.needsUpdate = G.nrm.needsUpdate = true;
+  $("tris").textContent = nt.toLocaleString();
+}
+
+// unit ray per beam in the world frame (x forward, y left, z up). Upright: negative elevation
+// points down. Upside down (sensor on its head): only the vertical flips — with the device's
+// UpsideDown parameter set, the sensor already reports azimuth in world left/right, so y must
+// NOT change sign (doing so mirrored the scene). Same convention as SICK's own viewer.
+function updateRays(az0, step) {
+  const { L, B } = G, zs = ui.mount === "upsidedown" ? -1 : 1;
+  for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
+    const i = l * B + b, az = (az0 + b * step) * DEG, el = G.elev[i] * DEG;
+    G.rayX[i] = Math.cos(az) * Math.cos(el); G.rayY[i] = Math.sin(az) * Math.cos(el); G.rayZ[i] = zs * Math.sin(el);
+  }
+}
+
+function showRemoved() {
+  const parts = [["intensity", cfg.intensity.on], ["outliers", cfg.outlier.on], ["flicker", cfg.history.on]]
+    .filter(([, on]) => on).map(([k]) => `${lastStats[k] || 0} ${k}`);
+  $("removed").textContent = parts.length ? parts.join(" · ") : "–";
+}
+
+// re-run the spatial stages and geometry on the current temporal state (UI changes, new frames)
+let gridMeta = null;
+function rebuild() {
+  needsRender = true;
+  if (!G) return;
+  const t0 = performance.now();
+  updateRays(gridMeta.start_azimuth_deg, gridMeta.step_deg);
+  lastStats.flicker = historyFilter(G.temporal, G.hist);
+  bilateral(G.hist, G.work);
+  flattenPlanes(G.work, G.out);
+  buildGeometry(G.out);
+  render2d();
+  showRemoved();
+  $("proc").textContent = (performance.now() - t0 + lastStats.ms).toFixed(0) + " ms";
+}
+
+function ingest(buf, meta) {
+  const L = meta.layers, B = meta.beams, N = L * B;
+  if (!G || G.L !== L || G.B !== B) {
+    allocGrid(L, B);
+    $("layerSel").innerHTML = '<option value="-1">all</option>' +
+      Array.from({ length: L }, (_, i) => `<option value="${i}">${i}</option>`).join("");
+  }
+  gridMeta = meta;
+  const f = new Float32Array(buf);
+  const t0 = performance.now();
+  G.rssi.set(f.subarray(N, 2 * N));
+  G.elev.set(f.subarray(2 * N, 3 * N));
+  const raw = f.subarray(0, N);
+  G.rawIn.set(raw);
+  // RSSI histogram (8 units per bin) for the intensity panel, then the intensity filter
+  const hist = new Uint32Array(50);
+  for (let i = 0; i < N; i++) if (raw[i] > 0) hist[Math.min(49, G.rssi[i] >> 3)]++;
+  rssiHist = hist; drawHistogram();
+  let intensity = 0;
+  const ci = cfg.intensity, inp = G.work;          // work is free scratch until rebuild()
+  for (let i = 0; i < N; i++) {
+    const keep = raw[i] > 0 && (!ci.on || (G.rssi[i] >= ci.min && G.rssi[i] <= ci.max));
+    if (raw[i] > 0 && !keep) intensity++;
+    inp[i] = keep ? raw[i] : 0;
+  }
+  if (layerBias.length !== L) layerBias = new Float32Array(L);
+  if (cfg.layercal.on) for (let l = 0; l < L; l++) {
+    const off = layerBias[l];
+    for (let i = l * B; i < (l + 1) * B; i++) if (inp[i] > 0) inp[i] += off;
+  }
+  G.frames = Math.min(G.frames + 1, 32);
+  detectMotion(inp);                               // on the unfiltered scan, so moving parts are seen whole
+  const outliers = rejectOutliers(inp, G.raw);     // relaxed inside moving areas
+  temporalUpdate(G.raw);
+  if (cfg.layercal.on && cfg.layercal.rate > 0 && ++calFrame % 10 === 0 && gridMeta) {
+    updateRays(gridMeta.start_azimuth_deg, gridMeta.step_deg);
+    updateLayerBias(G.temporal);
+  }
+  if (mode === "auto" && ++autoFrame % 10 === 0) { autoTune(); syncControls(); }
+  lastStats = { intensity, outliers, flicker: 0, ms: performance.now() - t0 };
+  if (!viewDist) {                              // first scan: frame the scene
+    fanElev = [G.elev[B >> 1], G.elev[(L - 1) * B + (B >> 1)]];
+    buildGuides(Math.min(ui.maxRange, 200));
+    const s = [];
+    for (let i = 0; i < N; i += 7) if (G.raw[i] > 0) s.push(G.raw[i]);
+    s.sort((a, b) => a - b);
+    if (s.length) { viewDist = s[Math.floor(s.length * 0.9)]; setView("persp"); }
+  }
+  rebuild();
+}
+
+// ---------- 2D views ----------
+// "top": orthographic bird's-eye map, sensor at the bottom looking up (x forward → up, y left → left).
+// "image": the organized range image itself, layers as rows (top = highest), beams as columns
+// (left = +60°, as seen from behind the sensor). Both draw the same filtered data and colours.
+ui.mode = "3d";
+const cv2 = $("view2d"), ctx2 = cv2.getContext("2d"), tip = $("tip");
+const v2 = { scale: 0, cx: 0, cy: 0 };            // top view: px per metre, sensor position (CSS px)
+let dpr = 1;
+const off = document.createElement("canvas"), offCtx = off.getContext("2d");
+const panelWidth = () => (innerWidth > 600 ? 304 : 0);
+
+function size2d() {
+  dpr = window.devicePixelRatio || 1;
+  cv2.width = Math.round(innerWidth * dpr); cv2.height = Math.round(innerHeight * dpr);
+}
+window.addEventListener("resize", () => { size2d(); render2d(); });
+size2d();
+
+function setMode(m) {
+  ui.mode = m;
+  for (const b of $("modeBtns").children) b.classList.toggle("on", b.dataset.mode === m);
+  container.hidden = m !== "3d"; cv2.hidden = m === "3d";
+  $("cam3d").hidden = m !== "3d"; $("fit2d").hidden = m === "3d";
+  $("hint").textContent = m === "3d" ? "drag: rotate · right-drag: pan · wheel: zoom · space: pause"
+    : m === "top" ? "drag: pan · wheel: zoom · double-click: fit · hover: inspect · space: pause"
+    : "drag: pan · wheel: zoom · double-click: fit · grey = no return, pink = removed by filters · space: pause";
+  tip.hidden = true;
+  if (m === "top" && !v2.scale) fit2d();
+  if (m === "3d") resize();
+  render2d();
+  try { localStorage.setItem("mrs6000.view", m); } catch (e) {}
+}
+for (const b of $("modeBtns").children) b.onclick = () => setMode(b.dataset.mode);
+$("fit2d").onclick = () => { ui.mode === "top" ? fit2d() : fitImage(); render2d(); };
+
+function fit2d() {
+  const pw = panelWidth(), W = innerWidth - pw, H = innerHeight;
+  const r = Math.max(2, Math.min(viewDist || ui.maxRange, ui.maxRange) * 1.1);
+  v2.scale = Math.min((W - 40) / (2 * r * Math.sin(60 * DEG)), (H - 70) / r);   // ±60° wedge fits
+  v2.cx = pw + W / 2; v2.cy = H - 35;
+}
+
+const css = c => `rgb(${c[0] * 255 | 0},${c[1] * 255 | 0},${c[2] * 255 | 0})`;
+function render2d() {
+  if (ui.mode === "3d") return;
+  const W = cv2.width, H = cv2.height;
+  ctx2.setTransform(1, 0, 0, 1, 0, 0);
+  ctx2.fillStyle = "#0e1116"; ctx2.fillRect(0, 0, W, H);
+  ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);          // draw in CSS pixels from here on
+  if (!G || !G.vis) {
+    ctx2.fillStyle = "#8b95a3"; ctx2.font = "14px system-ui"; ctx2.fillText("waiting for scan data…", panelWidth() + 30, 40);
+    return;
+  }
+  ui.mode === "top" ? renderTop() : renderImage();
+}
+
+// ---- top-down map ----
+function niceStep(minPx) {                          // grid spacing ≥ minPx on screen
+  for (const s of [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]) if (s * v2.scale >= minPx) return s;
+  return 200;
+}
+function renderTop() {
+  const { scale: s, cx, cy } = v2, P = G.pos.array, C = G.col.array;
+  const toX = y => cx - y * s, toY = x => cy - x * s;
+  const maxR = Math.min(ui.maxRange, 250);
+
+  // range rings, FOV wedge, labels
+  const step = niceStep(60);
+  ctx2.lineWidth = 1; ctx2.font = "11px system-ui"; ctx2.textAlign = "left";
+  for (let r = step; r <= maxR; r += step) {
+    ctx2.strokeStyle = Math.round(r / step) % 2 === 0 ? "#3d4654" : "#262d37";
+    ctx2.beginPath(); ctx2.arc(cx, cy, r * s, -Math.PI / 2 - 70 * DEG, -Math.PI / 2 + 70 * DEG); ctx2.stroke();
+    ctx2.fillStyle = "#6e7887"; ctx2.fillText(`${+r.toFixed(1)} m`, cx + 4, cy - r * s - 3);
+  }
+  ctx2.strokeStyle = "rgba(74,163,255,0.4)";
+  for (const a of [-60, 60]) {
+    ctx2.beginPath(); ctx2.moveTo(cx, cy);
+    ctx2.lineTo(cx - Math.sin(a * DEG) * maxR * s, cy - Math.cos(a * DEG) * maxR * s); ctx2.stroke();
+  }
+
+  // layer lines (also used for "surface": seen from above, surfaces are lines)
+  if (!ui.draw.startsWith("points") || ui.draw.includes("lines")) {
+    const paths = new Map();
+    for (let k = 0; k < G.nl; k++) {
+      const a = G.lIdx[2 * k], b = G.lIdx[2 * k + 1];
+      const key = ((C[3 * a] * 15 + 0.5) | 0) << 8 | ((C[3 * a + 1] * 15 + 0.5) | 0) << 4 | ((C[3 * a + 2] * 15 + 0.5) | 0);
+      let p = paths.get(key);
+      if (!p) { p = new Path2D(); paths.set(key, p); }
+      p.moveTo(toX(P[3 * a + 1]), toY(P[3 * a])); p.lineTo(toX(P[3 * b + 1]), toY(P[3 * b]));
+    }
+    ctx2.lineWidth = 1;
+    for (const [key, p] of paths) {
+      ctx2.strokeStyle = `rgb(${(key >> 8) * 17},${((key >> 4) & 15) * 17},${(key & 15) * 17})`;
+      ctx2.stroke(p);
+    }
+  }
+
+  // points: rasterised into an offscreen image (fast for ~22k points), then composited
+  if (ui.draw.includes("points") || !ui.draw.startsWith("surface") && !ui.draw.includes("lines")) {
+    const W = cv2.width, H = cv2.height;
+    if (off.width !== W || off.height !== H) { off.width = W; off.height = H; }
+    const img = offCtx.createImageData(W, H), px = new Uint32Array(img.data.buffer);
+    const sz = Math.max(1, Math.round(pointMat.size * dpr)), half = sz >> 1;
+    for (let k = 0; k < G.np; k++) {
+      const i = G.pIdx[k];
+      const X = Math.round(toX(P[3 * i + 1]) * dpr) - half, Y = Math.round(toY(P[3 * i]) * dpr) - half;
+      if (X < 0 || Y < 0 || X + sz > W || Y + sz > H) continue;
+      const c = 0xff000000 | ((C[3 * i + 2] * 255) << 16) | ((C[3 * i + 1] * 255) << 8) | (C[3 * i] * 255);
+      for (let dy = 0; dy < sz; dy++) px.fill(c, (Y + dy) * W + X, (Y + dy) * W + X + sz);
+    }
+    offCtx.putImageData(img, 0, 0);
+    ctx2.setTransform(1, 0, 0, 1, 0, 0); ctx2.drawImage(off, 0, 0); ctx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // sensor + scale bar
+  ctx2.fillStyle = "#ffd33d";
+  ctx2.beginPath(); ctx2.moveTo(cx, cy - 9); ctx2.lineTo(cx - 6, cy + 5); ctx2.lineTo(cx + 6, cy + 5); ctx2.closePath(); ctx2.fill();
+  const bar = niceStep(80), bx = innerWidth - 30 - bar * s, by = innerHeight - 40;
+  ctx2.strokeStyle = ctx2.fillStyle = "#d7dde5"; ctx2.lineWidth = 2;
+  ctx2.beginPath(); ctx2.moveTo(bx, by); ctx2.lineTo(bx + bar * s, by); ctx2.stroke();
+  ctx2.textAlign = "center"; ctx2.fillText(`${bar} m`, bx + bar * s / 2, by - 6);
+}
+
+// ---- range image ----
+function renderImage() {
+  const { L, B, vis } = G, C = G.col.array, D = G.out;
+  if (off.width !== B || off.height !== L) { off.width = B; off.height = L; }
+  const img = offCtx.createImageData(B, L), px = new Uint32Array(img.data.buffer);
+  // with "uniform" colouring the image would be blank, so colour by distance instead
+  let lo = 0, hi = 1;
+  const byDist = ui.colorBy === "uniform";
+  if (byDist) {
+    const smp = [];
+    for (let i = 0; i < G.N; i += 5) if (vis[i]) smp.push(D[i]);
+    smp.sort((a, b) => a - b);
+    if (smp.length) { lo = smp[Math.floor(smp.length * 0.02)]; hi = Math.max(lo + 0.1, smp[Math.floor(smp.length * 0.98)]); }
+  }
+  for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
+    const i = l * B + b, o = (L - 1 - l) * B + (B - 1 - b);
+    let r, g, bl;
+    if (vis[i]) {
+      if (byDist) [r, g, bl] = turbo((D[i] - lo) / (hi - lo));
+      else { r = C[3 * i]; g = C[3 * i + 1]; bl = C[3 * i + 2]; }
+      px[o] = 0xff000000 | ((bl * 255) << 16) | ((g * 255) << 8) | (r * 255);
+    } else px[o] = G.rawIn[i] > 0 ? 0xffd84fff : 0xff3a342e;   // removed by filters (pink) : no return (grey)
+  }
+  offCtx.putImageData(img, 0, 0);
+
+  // square cells: one beam × one layer = cell × cell CSS px, snapped to whole device pixels
+  const A = imgArea();
+  if (!vi.cell) fitImage();
+  const gw = B * vi.cell, gh = L * vi.cell;
+  ctx2.save();
+  ctx2.beginPath(); ctx2.rect(A.left, A.top, A.w, A.h); ctx2.clip();
+  ctx2.imageSmoothingEnabled = false;
+  ctx2.drawImage(off, vi.ox, vi.oy, gw, gh);
+  if (vi.cell * dpr >= 8) {                       // zoomed in: faint cell borders so single beams stay readable
+    const x0 = Math.max(0, Math.floor((A.left - vi.ox) / vi.cell)), x1 = Math.min(B, Math.ceil((A.left + A.w - vi.ox) / vi.cell));
+    const y0 = Math.max(0, Math.floor((A.top - vi.oy) / vi.cell)), y1 = Math.min(L, Math.ceil((A.top + A.h - vi.oy) / vi.cell));
+    ctx2.beginPath();
+    for (let x = x0; x <= x1; x++) { ctx2.moveTo(vi.ox + x * vi.cell, vi.oy + y0 * vi.cell); ctx2.lineTo(vi.ox + x * vi.cell, vi.oy + y1 * vi.cell); }
+    for (let y = y0; y <= y1; y++) { ctx2.moveTo(vi.ox + x0 * vi.cell, vi.oy + y * vi.cell); ctx2.lineTo(vi.ox + x1 * vi.cell, vi.oy + y * vi.cell); }
+    ctx2.strokeStyle = "rgba(14,17,22,0.35)"; ctx2.lineWidth = 1 / dpr; ctx2.stroke();
+  }
+  ctx2.strokeStyle = "#2a313c"; ctx2.lineWidth = 1; ctx2.strokeRect(vi.ox - 0.5, vi.oy - 0.5, gw + 1, gh + 1);
+  ctx2.restore();
+
+  // axes follow pan/zoom: azimuth under the grid, layer elevation on the left of the plot area
+  ctx2.fillStyle = "#8b95a3"; ctx2.font = "11px system-ui"; ctx2.textAlign = "center";
+  const az0 = gridMeta.start_azimuth_deg, azStep = gridMeta.step_deg;
+  const tick = [0.5, 1, 2, 5, 10, 20, 30].find(t => t / azStep * vi.cell >= 50) || 30;
+  const axisY = Math.min(vi.oy + gh, A.top + A.h);
+  for (let a = Math.ceil(az0 / tick) * tick; a <= az0 + (B - 1) * azStep + 1e-9; a += tick) {
+    const x = vi.ox + (B - 1 - (a - az0) / azStep + 0.5) * vi.cell;
+    if (x < A.left || x > A.left + A.w) continue;
+    ctx2.fillRect(x, axisY, 1, 4); ctx2.fillText(`${+a.toFixed(1)}°`, x, axisY + 16);
+  }
+  ctx2.fillText("azimuth (left = sensor's left)", A.left + A.w / 2, axisY + 32);
+  ctx2.textAlign = "right";
+  const every = Math.max(1, Math.ceil(14 / vi.cell));
+  for (let l = 0; l < L; l += every) {
+    const y = vi.oy + (L - 1 - l + 0.5) * vi.cell;
+    if (y < A.top || y > A.top + A.h) continue;
+    ctx2.fillText(`${G.elev[l * B + (B >> 1)].toFixed(1)}°`, A.left - 6, y + 4);
+  }
+  ctx2.textAlign = "left";
+  ctx2.fillText(`${(vi.cell * dpr).toFixed(0)} px per beam` +
+    (byDist ? `  ·  colour: distance ${lo.toFixed(1)}–${hi.toFixed(1)} m (pick a colour mode to change)` : ""), A.left, A.top - 12);
+}
+
+// range image view state: cell size (CSS px) and screen position of the grid's top-left corner
+const vi = { cell: 0, ox: 0, oy: 0 };
+const imgArea = () => { const left = panelWidth() + 70, top = 40; return { left, top, w: innerWidth - left - 30, h: innerHeight - top - 70 }; };
+const snapCell = c => Math.max(1, Math.round(c * dpr)) / dpr;      // whole device pixels → crisp squares
+function fitImage() {                                               // full width, top-aligned
+  if (!G) return;
+  const A = imgArea();
+  vi.cell = Math.max(1, Math.floor(A.w * dpr / G.B)) / dpr;
+  vi.ox = A.left + (A.w - G.B * vi.cell) / 2; vi.oy = A.top;
+}
+window.addEventListener("resize", () => { vi.cell = 0; });
+
+// ---- interaction ----
+let drag = null;
+cv2.addEventListener("pointerdown", e => { if (ui.mode !== "3d") { drag = { x: e.clientX, y: e.clientY }; cv2.setPointerCapture(e.pointerId); } });
+cv2.addEventListener("pointerup", () => { drag = null; });
+cv2.addEventListener("pointermove", e => {
+  if (drag) {
+    const t = ui.mode === "top" ? v2 : null, dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (t) { t.cx += dx; t.cy += dy; } else { vi.ox += dx; vi.oy += dy; }
+    drag = { x: e.clientX, y: e.clientY };
+    tip.hidden = true; render2d(); return;
+  }
+  inspect(e.clientX, e.clientY);
+});
+cv2.addEventListener("pointerleave", () => { tip.hidden = true; });
+cv2.addEventListener("wheel", e => {
+  if (ui.mode === "3d") return;
+  e.preventDefault();
+  let f = Math.exp(-e.deltaY * 0.0015);
+  if (ui.mode === "top") {
+    v2.cx = e.clientX - (e.clientX - v2.cx) * f; v2.cy = e.clientY - (e.clientY - v2.cy) * f; v2.scale *= f;
+  } else if (vi.cell) {
+    // zoom in whole-device-pixel steps so cells stay square and crisp
+    let c = snapCell(vi.cell * f);
+    if (c === vi.cell) c = snapCell(vi.cell + Math.sign(f - 1) / dpr);
+    c = Math.min(80, Math.max(1 / dpr, c));
+    f = c / vi.cell;
+    vi.ox = e.clientX - (e.clientX - vi.ox) * f; vi.oy = e.clientY - (e.clientY - vi.oy) * f; vi.cell = c;
+  }
+  render2d();
+}, { passive: false });
+cv2.addEventListener("dblclick", () => { if (ui.mode === "top") fit2d(); else if (ui.mode === "image") fitImage(); render2d(); });
+
+function inspect(mx, my) {
+  if (!G || !G.vis) return;
+  let i = -1;
+  if (ui.mode === "top") {
+    const P = G.pos.array; let best = 64;                 // within 8 px
+    for (let k = 0; k < G.np; k++) {
+      const j = G.pIdx[k], dx = v2.cx - P[3 * j + 1] * v2.scale - mx, dy = v2.cy - P[3 * j] * v2.scale - my, d2 = dx * dx + dy * dy;
+      if (d2 < best) { best = d2; i = j; }
+    }
+  } else if (vi.cell) {
+    const A = imgArea(), cb = Math.floor((mx - vi.ox) / vi.cell), cl = Math.floor((my - vi.oy) / vi.cell);
+    if (mx >= A.left && mx < A.left + A.w && my >= A.top && my < A.top + A.h && cb >= 0 && cb < G.B && cl >= 0 && cl < G.L)
+      i = (G.L - 1 - cl) * G.B + (G.B - 1 - cb);
+  }
+  if (i < 0) { tip.hidden = true; return; }
+  const l = Math.floor(i / G.B), b = i % G.B;
+  const mask = G.frames >= 32 ? 0xffffffff : ((1 << G.frames) - 1) >>> 0;
+  const valid = popcount(G.validBits[i] & mask) / Math.max(1, G.frames);
+  const status = G.vis[i] ? "" : G.rawIn[i] > 0 ? "\nremoved by filters" : "\nno return";
+  tip.textContent =
+    `layer ${l}  ·  beam ${b}\n` +
+    `azimuth ${(gridMeta.start_azimuth_deg + b * gridMeta.step_deg).toFixed(2)}°  elevation ${G.elev[i].toFixed(2)}°\n` +
+    `distance ${G.out[i] > 0 ? G.out[i].toFixed(3) + " m" : "–"}  (raw ${G.rawIn[i] > 0 ? G.rawIn[i].toFixed(3) + " m" : "–"})\n` +
+    `RSSI ${G.rssi[i]}  ·  noise σ ${(Math.sqrt(G.noiseVar[i]) * 1000).toFixed(0)} mm  ·  layer offset ${cfg.layercal.on ? (layerBias[l] * 1000).toFixed(1) + " mm" : "off"}\n` +
+    `valid ${(valid * 100).toFixed(0)} %  ·  jump rate ${(G.jumpRate[i] * 100).toFixed(0)} %  ·  conf ${G.conf[i].toFixed(2)}` + status;
+  tip.hidden = false;
+  tip.style.left = Math.min(mx + 14, innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = Math.min(my + 14, innerHeight - tip.offsetHeight - 8) + "px";
+}
+
+try { const m = localStorage.getItem("mrs6000.view"); if (m && m !== "3d") setMode(m); } catch (e) {}
+
+// ---------- data feed (long-poll) ----------
+let lastId = 0, lastFrameAt = 0;
+async function pollFrames() {
+  for (;;) {
+    try {
+      const r = await fetch(`/frame?after=${lastId}`, { cache: "no-store" });
+      const meta = JSON.parse(r.headers.get("X-Meta") || "{}");
+      const buf = await r.arrayBuffer();
+      if (meta.id && meta.id !== lastId && buf.byteLength) {
+        lastId = meta.id; lastFrameAt = performance.now();
+        $("rate").textContent = meta.rate.toFixed(1) + " Hz";
+        $("points").textContent = meta.points.toLocaleString();
+        $("geom").textContent = `${meta.layers} × ${meta.beams}`;
+        if (meta.replay) $("subtitle").textContent = "replaying a recording (looped)";
+        if (!ui.paused) ingest(buf, meta);
+      }
+      $("err").textContent = "";
+    } catch (e) {
+      $("err").textContent = "viewer server unreachable – is viewer.py running?";
+      console.error(e);
+      await new Promise(res => setTimeout(res, 1000));
+    }
+  }
+}
+
+const STATUS = { 0: "unknown", 1: "startup", 2: "service mode", 3: "normal", 4: "suspended",
+  5: "service recommended", 6: "service required", 7: "recoverable error", 8: "fatal error" };
+async function pollStatus() {
+  try {
+    const s = await (await fetch("/status", { cache: "no-store" })).json();
+    const d = s.device || {};
+    if (!mountChosen && typeof d.UpsideDown === "boolean" && (d.UpsideDown ? "upsidedown" : "upright") !== ui.mount) {
+      ui.mount = d.UpsideDown ? "upsidedown" : "upright"; $("mount").value = ui.mount;
+      buildGuides(Math.min(ui.maxRange, 200)); rebuild();
+    }
+    if (d.DeviceType) { $("title").textContent = d.DeviceType; $("subtitle").textContent = `SN ${d.SerialNumber} · FW ${d.FirmwareVersion}`; }
+    const code = d.CommonDeviceStatus && d.CommonDeviceStatus.Status;
+    $("devStatus").textContent = STATUS[code] ?? "–";
+    $("devDot").className = "dot " + (code === 3 ? "ok" : code >= 7 ? "err" : code != null ? "warn" : "");
+    const num = (v, digits, unit) => typeof v === "number" ? v.toFixed(digits) + unit : "–";
+    $("temps").textContent = `${num(d.KM_SysBoard_Temp, 1, " °C")} / ${num(d.KM_APDBoard_Temp, 1, " °C")}`;
+    $("volt").textContent = num(d.KM_PowerSource_Voltage, 2, " V");
+    $("mirror").textContent = typeof d.KM_MotorRotationPeriod === "number" ? (1000 / d.KM_MotorRotationPeriod).toFixed(2) + " Hz" : "–";
+    $("window").textContent = d.KMWindowError ? "error" : d.KMWindowWarning ? "warning" : d.KMWindowError === false ? "clean" : "–";
+    if (s.error) $("err").textContent = s.error;
+  } catch (e) { /* frame poll reports connectivity */ }
+  setTimeout(pollStatus, 2000);
+}
+
+// ---------- render loop ----------
+let frames = 0, fpsT = performance.now();
+function animate(t) {
+  requestAnimationFrame(animate);
+  // render on demand: only when something changed (new scan, settings, resize) or the camera moves
+  // (controls.update() is true while dragging and during the damping glide) — at 10 Hz scans and a
+  // still camera that is 10 renders/s instead of the display refresh rate
+  if (ui.mode === "3d") {
+    const moved = controls.update();
+    if (moved || needsRender) { renderer.render(scene, camera); frames++; needsRender = false; }
+  }
+  if (t - fpsT > 1000) { $("fps").textContent = Math.round(frames * 1000 / (t - fpsT)); frames = 0; fpsT = t; }
+  const age = performance.now() - lastFrameAt;
+  $("streamDot").className = "dot " + (ui.paused ? "warn" : lastFrameAt && age < 500 ? "ok" : "err");
+}
+
+buildGuides(ui.maxRange);
+setView("persp");
+requestAnimationFrame(animate);
+pollFrames();
+pollStatus();
+</script>
+</body>
+</html>
