@@ -1,13 +1,15 @@
 // Points, layer lines and the organized triangle mesh of one processed scan, as plain typed arrays
 // (three.js-independent). All three share one position/colour/normal buffer (vertex = grid index) and
 // differ only in their index lists.
-import { AREA_COLORS, turbo } from "../core/colors";
+import { AREA_COLORS, scale, trackColor, turbo } from "../core/colors";
 import { sameTol } from "../core/math";
 import type { RGB } from "../core/types";
 import type { Grid } from "../pipeline/grid";
 
-export type ColorBy = "uniform" | "rssi" | "dist" | "height" | "layer" | "noise" | "conf" | "area";
+export type ColorBy = "uniform" | "rssi" | "dist" | "height" | "layer" | "noise" | "conf" | "area" | "cell";
 export const UNIFORM: RGB = [0.78, 0.8, 0.83];
+/** categorical colour-bys: no colour scale */
+const CATEGORICAL: ReadonlySet<ColorBy> = new Set<ColorBy>(["uniform", "area", "cell"]);
 
 export interface GeometryOptions {
   colorBy: ColorBy;
@@ -15,6 +17,7 @@ export interface GeometryOptions {
   maxRange: number;
   jump: number; jumpRel: number;
   tint?: (i: number, rgb: RGB) => RGB;
+  cells?: Int32Array | null;   // radial-cell slot per beam (−1 = none), for colorBy "cell"
 }
 
 export interface Geometry {
@@ -34,9 +37,10 @@ export function createGeometry(N: number): Geometry {
 }
 
 /** value used for colouring beam i (before scaling) */
-function colorValue(g: Grid, i: number, d: number, z: number, l: number, by: ColorBy): number {
-  switch (by) {
+function colorValue(g: Grid, i: number, d: number, z: number, l: number, o: GeometryOptions): number {
+  switch (o.colorBy) {
     case "area": return g.area[i];
+    case "cell": return o.cells ? o.cells[i] : -1;
     case "rssi": return g.rssi[i];
     case "dist": return d;
     case "height": return z;
@@ -59,7 +63,7 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
     vis[i] = ok ? 1 : 0;
     if (!ok) continue;
     P[3 * i] = rayX[i] * d; P[3 * i + 1] = rayY[i] * d; P[3 * i + 2] = rayZ[i] * d;
-    vals[i] = colorValue(g, i, d, P[3 * i + 2], l, o.colorBy);
+    vals[i] = colorValue(g, i, d, P[3 * i + 2], l, o);
     geo.pIdx[np++] = i;
     if (b > 0 && vis[i - 1] && jumpOk(i, i - 1)) { geo.lIdx[2 * nl] = i - 1; geo.lIdx[2 * nl + 1] = i; nl++; }
   }
@@ -98,7 +102,7 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
   let lo = 0, hi = 1;
   if (o.colorBy === "layer") { lo = 0; hi = L - 1; }
   else if (o.colorBy === "conf") { lo = 0; hi = 1; }
-  else if (o.colorBy !== "uniform" && o.colorBy !== "area" && np) {
+  else if (!CATEGORICAL.has(o.colorBy) && np) {
     const step = Math.max(1, Math.floor(np / 4000)), s: number[] = [];
     for (let k = 0; k < np; k += step) s.push(vals[geo.pIdx[k]]);
     s.sort((x, y) => x - y);
@@ -108,7 +112,8 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
   const counts: [number, number, number] = [0, 0, 0];
   for (let k = 0; k < np; k++) {
     const i = geo.pIdx[k];
-    let rgb: RGB = o.colorBy === "uniform" ? UNIFORM : o.colorBy === "area" ? AREA_COLORS[vals[i]] : turbo((vals[i] - lo) / (hi - lo));
+    let rgb: RGB = o.colorBy === "uniform" ? UNIFORM : o.colorBy === "area" ? AREA_COLORS[vals[i]]
+      : o.colorBy === "cell" ? (vals[i] < 0 ? scale(UNIFORM, 0.35) : trackColor(vals[i] + 1)) : turbo((vals[i] - lo) / (hi - lo));
     if (o.colorBy === "area") counts[vals[i]]++;
     if (o.tint) rgb = o.tint(i, rgb);
     C[3 * i] = rgb[0]; C[3 * i + 1] = rgb[1]; C[3 * i + 2] = rgb[2];

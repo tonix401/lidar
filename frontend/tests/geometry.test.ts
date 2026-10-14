@@ -46,4 +46,16 @@ describe("geometry", () => {
     const g = processed(), geo = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, colorBy: "area" });
     expect(geo.areaCounts.reduce((a, b) => a + b, 0)).toBe(geo.np);
   });
+
+  it("cell colouring: one colour per slot, grey without one", () => {
+    const g = processed(), cells = new Int32Array(g.N).fill(-1);
+    cells[0] = 5; cells[1] = 5; cells[2] = 6;
+    const geo = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, colorBy: "cell", cells });
+    const rgb = (i: number) => Array.from(geo.col.subarray(3 * i, 3 * i + 3));
+    expect(rgb(0)).toEqual(rgb(1));
+    expect(rgb(0)).not.toEqual(rgb(2));
+    expect(rgb(3)[0]).toBeCloseTo(UNIFORM[0] * 0.35);
+    const off = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, colorBy: "cell" });   // cells off
+    expect(Array.from(off.col.subarray(0, 3))).toEqual(rgb(3));
+  });
 });

@@ -43,6 +43,22 @@ describe("config", () => {
     expect(a.temporal.noiseFloor).toBe(0.04);
     expect(a.outlier.abs).toBeCloseTo(0.2);
     expect(a.objects.learn).toBe(42);
+    expect(a.dynamic.radius).toBeCloseTo(0.12);                // 3 × noise floor
+    expect(autoConfig(base, 0.012).dynamic.radius).toBe(0.04);
+  });
+
+  it("the moving-area stages are part of the presets and survive old stored settings", () => {
+    expect(PRESETS.off.dynamic.on).toBe(false);
+    expect(PRESETS.strong.dynamic.radius).toBeGreaterThan(PRESETS.light.dynamic.radius);
+    const old = mergeConfig(defaultConfig(), { temporal: { window: 7 } });   // stored before the stages existed
+    expect(old.dynamic).toEqual(defaultConfig().dynamic);
+    expect(old.cells).toEqual(defaultConfig().cells);
+    expect(STAGES.findIndex(s => s.key === "dynamic")).toBeLessThan(STAGES.findIndex(s => s.key === "planes"));
+    expect(defaultConfig().cells.on).toBe(false);                // experimental, user-controlled
+    const base = defaultConfig();
+    base.cells.on = true;
+    expect(autoConfig(base, 0.03).cells.on).toBe(true);
+    expect(withPreset(base, "off").cells.on).toBe(true);
   });
 
   it("estimateNoise needs enough established beams", () => {

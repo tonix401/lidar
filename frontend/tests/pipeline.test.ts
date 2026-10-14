@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../src/config/config";
 import { bilateral } from "../src/pipeline/bilateral";
+import { Cells } from "../src/pipeline/cells";
+import { dynSmooth } from "../src/pipeline/dynsmooth";
 import { createGrid, resetHistory } from "../src/pipeline/grid";
 import { historyFilter } from "../src/pipeline/history";
 import { intensityFilter, rssiHistogram } from "../src/pipeline/intensity";
 import { applyLayerBias, removeUnobservable, updateLayerBias } from "../src/pipeline/layercal";
+import { FlickerMeter, movingRoughness } from "../src/pipeline/metrics";
 import { detectMotion } from "../src/pipeline/motion";
 import { rejectOutliers } from "../src/pipeline/outlier";
 import { flattenPlanes } from "../src/pipeline/planes";
 import { Processor } from "../src/pipeline/processor";
 import { updateRays } from "../src/pipeline/rays";
 import { temporalUpdate } from "../src/pipeline/temporal";
-import { castRanges, elevations, frameData, meta } from "./helpers/scene";
+import { castRanges, elevations, frameData, meta, type Cylinder } from "./helpers/scene";
 
 function gridFor(o = {}) {
   const m = meta(o), g = createGrid(m.layers, m.beams);
@@ -122,6 +125,142 @@ describe("history + bilateral + planes", () => {
     flattenPlanes(g, noisy, out, cfg);
     expect(rms(out, truth)).toBeLessThan(rms(noisy, truth) * 0.35);
     expect(Array.from(g.area).filter(a => a === 0).length).toBeGreaterThan(g.N * 0.5);
+  });
+});
+
+describe("moving areas", () => {
+  // a person-sized cylinder in front of the wall, all its beams flagged moving, 30 mm range noise
+  const person = { x: 3, y: 0, r: 0.25, z0: -1, z1: 1 }, o = { floorZ: -50, B: 923 }, nf = 0.03;   // real beam step
+  function setup() {
+    const g = gridFor(o), cfg = defaultConfig(), truth = castRanges({ ...o, objects: [person] }), bg = castRanges(o);
+    const noisy = castRanges({ ...o, objects: [person], noise: nf, seed: 7 });
+    cfg.temporal.noiseFloor = nf;
+    cfg.dynamic = { on: true, radius: 3 * nf, minPts: 4, gap: 0.3 };
+    g.conf.fill(1); g.noiseVar.fill(nf * nf);
+    for (let i = 0; i < g.N; i++) if (truth[i] > 0 && truth[i] < bg[i] - 0.5) g.motionHold[i] = 5;
+    return { g, cfg, truth, bg, noisy };
+  }
+  const onPerson = (g: ReturnType<typeof gridFor>) => Array.from({ length: g.N }, (_, i) => i).filter(i => g.motionHold[i] > 0);
+
+  it("dynSmooth reduces the noise of a moving body without pulling it towards the wall", () => {
+    const { g, cfg, truth, bg, noisy } = setup(), out = noisy.slice();
+    dynSmooth(g, noisy, out, bg, meta(o).step_deg, cfg);
+    const all = onPerson(g), idx = all.filter(i => out[i] > 0);      // a few grazing edge outliers count as mixed pixels
+    const err = (a: Float32Array) => Math.sqrt(idx.reduce((s, i) => s + (a[i] - truth[i]) ** 2, 0) / idx.length);
+    expect(all.length).toBeGreaterThan(50);
+    expect(idx.length).toBeGreaterThan(all.length * 0.98);
+    expect(err(out)).toBeLessThan(err(noisy) / 2);
+    const bias = idx.reduce((s, i) => s + out[i] - truth[i], 0) / idx.length;
+    expect(Math.abs(bias)).toBeLessThan(0.01);
+    expect(Math.max(...idx.map(i => out[i] - truth[i]))).toBeLessThan(0.1);   // no point drawn towards the wall
+    for (let i = 0; i < g.N; i++) if (!g.motionHold[i]) expect(out[i]).toBe(noisy[i]);   // static beams untouched
+  });
+
+  it("dynSmooth drops a mixed pixel between the body and the wall, keeps the edge", () => {
+    const { g, cfg, truth, bg } = setup(), clean = truth.slice(), l = 12, B = g.B;
+    let edge = -1;                                              // last person beam of layer l, wall to its left
+    for (let b = 1; b < B - 1; b++) { const i = l * B + b; if (g.motionHold[i] && !g.motionHold[i + 1]) edge = i; }
+    const veil = edge + 1;
+    clean[veil] = (truth[edge] + truth[veil + 1]) / 2;           // halfway between person and wall
+    g.motionHold[veil] = 5;
+    const out = clean.slice();
+    expect(dynSmooth(g, clean, out, bg, meta(o).step_deg, cfg)).toBe(1);
+    expect(out[veil]).toBe(0);
+    expect(out[edge]).toBeGreaterThan(0);
+  });
+
+  it("bilateral leaves moving beams to dynSmooth", () => {
+    const { g, cfg, noisy } = setup(), out = new Float32Array(g.N);
+    bilateral(g, noisy, out, cfg);
+    for (const i of onPerson(g)) expect(out[i]).toBe(noisy[i]);
+  });
+
+  it("metrics: roughness and foreground flicker of moving beams", () => {
+    const { g, cfg, truth, bg, noisy } = setup();
+    expect(movingRoughness(g, noisy, cfg)).toBeGreaterThan(3 * movingRoughness(g, truth, cfg));
+    expect(movingRoughness(createGrid(2, 10), new Float32Array(20), cfg)).toBeNaN();
+    const m = new FlickerMeter(g.N), model = { bg, cand: new Float32Array(g.N), stable: new Float32Array(g.N), ready: true };
+    expect(m.update(g, truth, null, cfg)).toBeNaN();             // no background yet
+    expect(m.update(g, truth, model, cfg)).toBeNaN();            // first scan
+    expect(m.update(g, truth, model, cfg)).toBe(0);
+    const gone = truth.slice();
+    for (const i of onPerson(g).slice(0, 10)) gone[i] = bg[i];  // 10 beams fall back to the wall
+    expect(m.update(g, gone, model, cfg)).toBeCloseTo(10 / onPerson(g).length);
+  });
+});
+
+describe("radial cells", () => {
+  const o = { floorZ: -50 };
+  /** one scan: ranges of the scene with `objects`, their beams flagged moving; returns the cell output */
+  function scan(c: Cells, g: ReturnType<typeof gridFor>, cfg: ReturnType<typeof defaultConfig>, objects: Cylinder[], k: number,
+                drop: (i: number) => boolean = () => false) {
+    const bg = castRanges(o), cur = castRanges({ ...o, objects });
+    for (let i = 0; i < g.N; i++) {
+      if (cur[i] < bg[i] - 0.3) g.motionHold[i] = 10;
+      if (drop(i)) cur[i] = 0;
+    }
+    c.update(g, cur, 1000 + k / 10, cfg);
+    const out = cur.slice();
+    c.apply(g, cur, out, cfg);
+    return { cur, out };
+  }
+  const shown = (g: ReturnType<typeof gridFor>, cur: Float32Array, out: Float32Array) => {
+    let n = 0, all = 0;
+    for (let i = 0; i < g.N; i++) if (g.motionHold[i] && cur[i] > 0) { all++; if (out[i] > 0) n++; }
+    return n / Math.max(1, all);
+  };
+  function setup() {
+    const g = gridFor(o), cfg = defaultConfig();
+    cfg.cells = { ...cfg.cells, on: true };
+    return { g, cfg, c: new Cells(g.L, g.B, cfg.cells.colBeams, cfg.cells.colLayers) };
+  }
+  const person = (y: number, x = 3): Cylinder => ({ x, y, r: 0.25, z0: -1, z1: 1 });
+
+  it("a new object is shown after `confirm` hits, a one-scan spike never", () => {
+    const { g, cfg, c } = setup();
+    let r = scan(c, g, cfg, [person(0)], 0);
+    expect(shown(g, r.cur, r.out)).toBe(0);
+    r = scan(c, g, cfg, [person(0)], 1);
+    expect(shown(g, r.cur, r.out)).toBe(1);
+    g.motionHold.fill(0);
+    r = scan(c, g, cfg, [person(0), { x: 1.8, y: -1.2, r: 0.05, z0: -0.4, z1: -0.2 }], 2);   // spike appears once
+    const spike = Array.from({ length: g.N }, (_, i) => i).filter(i => r.cur[i] > 0 && r.cur[i] < 2.3);
+    expect(spike.length).toBeGreaterThan(0);
+    for (const i of spike) expect(r.out[i]).toBe(0);
+  });
+
+  it("the edge of a confirmed body moving into the next columns is shown at once", () => {
+    const { g, cfg, c } = setup();
+    for (let k = 0; k < 3; k++) scan(c, g, cfg, [person(0.05 * k)], k);
+    const r = scan(c, g, cfg, [person(0.2)], 3);                 // sideways step into new columns
+    expect(shown(g, r.cur, r.out)).toBe(1);
+  });
+
+  it("follows a body stepping 0.3 m along its column within one scan", () => {
+    const { g, cfg, c } = setup();
+    for (let k = 0; k < 4; k++) scan(c, g, cfg, [person(0)], k);
+    const r = scan(c, g, cfg, [person(0, 2.7)], 4);
+    expect(shown(g, r.cur, r.out)).toBe(1);
+    const i = Array.from({ length: g.N }, (_, j) => j).find(j => c.assign[j] >= 0 && r.cur[j] < 2.6)!;
+    expect(c.range[c.assign[i]]).toBeCloseTo(r.cur[i], 1);
+  });
+
+  it("fills a dropout for at most `hold` scans", () => {
+    const { g, cfg, c } = setup();
+    cfg.cells.hold = 2;
+    for (let k = 0; k < 4; k++) scan(c, g, cfg, [person(0)], k);
+    const hole = (i: number) => i % g.B % 3 === 0;              // every third beam column loses its return
+    let k = 4;
+    const holes = (r: { cur: Float32Array; out: Float32Array }) =>
+      Array.from({ length: g.N }, (_, i) => i).filter(i => g.motionHold[i] && hole(i) && c.last[i] >= 0).map(i => r.out[i]);
+    let r = scan(c, g, cfg, [person(0)], k++, hole);
+    const filled = holes(r);
+    expect(filled.length).toBeGreaterThan(10);
+    expect(Math.min(...filled)).toBeGreaterThan(2.5);           // filled near the body's range (~2.75 m)
+    r = scan(c, g, cfg, [person(0)], k++, hole);
+    expect(Math.min(...holes(r))).toBeGreaterThan(2.5);
+    r = scan(c, g, cfg, [person(0)], k++, hole);
+    expect(Math.max(...holes(r))).toBe(0);                      // third scan: no longer held
   });
 });
 

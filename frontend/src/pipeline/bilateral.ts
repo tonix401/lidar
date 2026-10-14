@@ -12,7 +12,9 @@ export function bilateral(g: Grid, src: Float32Array, dst: Float32Array, cfg: Co
   for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
     const i = l * B + b, d = src[i];
     if (d <= 0) { dst[i] = 0; continue; }
-    const moving = isMoving(g, i, cfg), wb = moving ? Math.min(c.wb, cfg.adaptive.dynSpatial) : c.wb, wl = moving ? 0 : c.wl;
+    const moving = isMoving(g, i, cfg);
+    if (moving && cfg.dynamic.on) { dst[i] = d; continue; }          // smoothed in 3D by dynSmooth instead
+    const wb = moving ? Math.min(c.wb, cfg.adaptive.dynSpatial) : c.wb, wl = moving ? 0 : c.wl;
     if (wb === 0 && wl === 0) { dst[i] = d; continue; }
     const sr = Math.max(sameTol(d, c.srAbs, c.srRel), c.srNoise * Math.sqrt(g.noiseVar[i])), cut = 3 * sr;
     let ws = 0, acc = 0;

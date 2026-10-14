@@ -1,22 +1,29 @@
 // The processing pipeline for one organized scan, in order:
 //  1 intensity filter → 2 layer calibration → 3 motion detection (unfiltered) → 4 outlier rejection
-//  → 5 temporal model → objects (per-scan ranges) → [refine] 6 history filter → 7 bilateral → 8 planes.
+//  → 5 temporal model → objects (per-scan ranges) → [refine] 6 history filter → 7 bilateral
+//  → 7b moving-area smoothing → 7c radial cells → 8 planes. (Radial cells are updated in ingest.)
 // ingest() runs the per-scan stages; refine() re-runs the spatial stages (also after settings changes).
 import type { Config } from "../config/config";
 import type { FrameMeta, Mount } from "../core/types";
 import { ObjectDetector } from "../objects/detector";
 import { bilateral } from "./bilateral";
+import { Cells } from "./cells";
+import { dynSmooth } from "./dynsmooth";
 import { createGrid, resetHistory, type Grid } from "./grid";
 import { historyFilter } from "./history";
 import { intensityFilter, rssiHistogram } from "./intensity";
 import { applyLayerBias, removeUnobservable, updateLayerBias } from "./layercal";
+import { FlickerMeter, movingRoughness } from "./metrics";
 import { detectMotion } from "./motion";
 import { rejectOutliers } from "./outlier";
 import { flattenPlanes } from "./planes";
 import { updateRays } from "./rays";
 import { temporalUpdate } from "./temporal";
 
-export interface FrameStats { intensity: number; outliers: number; flicker: number; ingestMs: number; refineMs: number }
+export interface FrameStats {
+  intensity: number; outliers: number; flicker: number; veils: number; spikes: number; ingestMs: number; refineMs: number;
+  movRough: number; movFlicker: number;        // moving areas: roughness (mm), foreground flips per scan (0..1)
+}
 
 export const LAYERCAL_EVERY = 10;      // scans between calibration updates
 
@@ -24,12 +31,14 @@ export class Processor {
   grid: Grid | null = null;
   meta: FrameMeta | null = null;
   objects: ObjectDetector | null = null;
+  cells: Cells | null = null;
   layerBias = new Float32Array(24);
   rssiHist: Uint32Array<ArrayBufferLike> = new Uint32Array(50);
-  stats: FrameStats = { intensity: 0, outliers: 0, flicker: 0, ingestMs: 0, refineMs: 0 };
+  stats: FrameStats = { intensity: 0, outliers: 0, flicker: 0, veils: 0, spikes: 0, ingestMs: 0, refineMs: 0, movRough: NaN, movFlicker: NaN };
   /** called after a layer-calibration update (e.g. to persist the offsets) */
   onLayerBias: ((bias: Float32Array) => void) | null = null;
   private scans = 0;
+  private flickerMeter: FlickerMeter | null = null;
 
   constructor(public cfg: Config, public mount: Mount = "upright") {}
 
@@ -40,6 +49,7 @@ export class Processor {
     if (!this.grid || this.grid.L !== L || this.grid.B !== B) {
       this.grid = createGrid(L, B);
       this.objects = new ObjectDetector(N);
+      this.flickerMeter = new FlickerMeter(N);
     }
     const g = this.grid, cfg = this.cfg, t0 = performance.now();
     this.meta = meta;
@@ -59,9 +69,16 @@ export class Processor {
     temporalUpdate(g, g.raw, cfg);
     if (cfg.layercal.on && cfg.layercal.rate > 0 && ++this.scans % LAYERCAL_EVERY === 0 &&
         updateLayerBias(g, g.temporal, this.layerBias, cfg.layercal.rate)) this.onLayerBias?.(this.layerBias);
-    this.objects!.update(g, g.raw, meta.ts || performance.now() / 1000, meta.step_deg, cfg);
+    const ts = meta.ts || performance.now() / 1000;
+    this.objects!.update(g, g.raw, ts, meta.step_deg, cfg);
+    if (!cfg.cells.on || !cfg.adaptive.on) this.cells = null;
+    else {
+      if (!this.cells?.fits(L, B, cfg.cells)) this.cells = new Cells(L, B, cfg.cells.colBeams, cfg.cells.colLayers);
+      this.cells.update(g, g.raw, ts, cfg);
+    }
     this.stats = { ...this.stats, intensity, outliers, ingestMs: performance.now() - t0 };
     this.refine();
+    this.stats.movFlicker = this.flickerMeter!.update(g, g.out, this.objects!.bgModel, cfg);
     return g;
   }
 
@@ -72,7 +89,11 @@ export class Processor {
     const t0 = performance.now();
     this.stats.flicker = historyFilter(g, g.temporal, g.hist, this.cfg);
     bilateral(g, g.hist, g.work, this.cfg);
+    const bg = this.objects?.bgModel.ready ? this.objects.bgModel.bg : null;
+    this.stats.veils = dynSmooth(g, g.hist, g.work, bg, this.meta?.step_deg ?? 0.13, this.cfg);
+    this.stats.spikes = this.cells && this.cfg.cells.on ? this.cells.apply(g, g.raw, g.work, this.cfg) : 0;
     flattenPlanes(g, g.work, g.out, this.cfg);
+    this.stats.movRough = movingRoughness(g, g.out, this.cfg);
     this.stats.refineMs = performance.now() - t0;
   }
 
@@ -90,5 +111,7 @@ export class Processor {
   reset(): void {
     if (this.grid) resetHistory(this.grid);
     this.objects?.reset();
+    this.cells?.reset();
+    this.flickerMeter?.reset();
   }
 }
