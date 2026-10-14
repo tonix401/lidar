@@ -46,7 +46,7 @@ export class ObjectDetector {
     const dt = this.lastTs && ts > this.lastTs && ts - this.lastTs < 1 ? ts - this.lastTs : 0.1;
     this.lastTs = ts;
     if (!this.bgModel.ready) { updateBackground(this.bgModel, cur, g.noiseVar, this.hold, dt, c); return; }
-    this.foregroundCount = foreground(this.bgModel, cur, g.noiseVar, g.area, c, this.fg);
+    this.foregroundCount = foreground(this.bgModel, cur, g.noiseVar, g.area, c, this.fg, g);
     const { detections, starts, queue } = segment({ ...g, stepDeg }, cur, this.fg, c, this.lab, this.queue);
     this.tracker.update(detections, dt, c);
     this.cell.fill(0); this.hold.fill(0);

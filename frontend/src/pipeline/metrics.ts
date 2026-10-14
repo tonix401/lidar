@@ -42,7 +42,7 @@ export class FlickerMeter {
   /** share of moving beams (0..1) whose foreground state changed; NaN until two scans with a background */
   update(g: Grid, D: Float32Array, bg: Background | null, cfg: Config): number {
     if (!bg?.ready) { this.valid = false; return NaN; }
-    foreground(bg, D, g.noiseVar, g.area, cfg.objects, this.cur);
+    foreground(bg, D, g.noiseVar, g.area, cfg.objects, this.cur, g);
     let moving = 0, flips = 0;
     if (this.valid) for (let i = 0; i < g.N; i++) {
       if (!isMoving(g, i, cfg)) continue;

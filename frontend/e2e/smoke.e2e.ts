@@ -14,7 +14,7 @@ const ROOT = resolve(process.cwd(), "..");
 const PYTHON = process.env.PYTHON ?? pythonInVenv(join(ROOT, "backend"));
 const L = 24, B = 301, STEP = 0.4;
 
-/** .mrsstream writer (format: backend/src/mrs6000/server/stream.py) */
+/** .tpc writer (format: backend/src/mrs6000/server/stream.py) */
 function writeRecording(path: string, scans: number): void {
   const hdr = { layers: L, beams: B, start_azimuth_deg: -60, step_deg: STEP, upside_down: false,
                 elev: elevations(L).flatMap(e => Array(B).fill(e)) };
@@ -38,11 +38,11 @@ const errors: string[] = [];
 beforeAll(async () => {
   if (!existsSync("dist/index.html")) execSync("npx vite build", { stdio: "inherit" });
   const dir = mkdtempSync(join(tmpdir(), "mrs6000-e2e-"));
-  writeRecording(join(dir, "synthetic.mrsstream"), 120);
+  writeRecording(join(dir, "synthetic.tpc"), 120);
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
   backend = spawn(PYTHON, ["-m", "mrs6000.server", "--offline", "--port", String(port), "--recordings", dir,
-                           "--frontend", resolve("dist"), "--replay", join(dir, "synthetic.mrsstream")]);
+                           "--frontend", resolve("dist"), "--replay", join(dir, "synthetic.tpc")]);
   backend.stdout!.on("data", d => { log += d; });
   backend.stderr!.on("data", d => { log += d; });
   for (let k = 0; k < 100; k++) {
@@ -69,7 +69,7 @@ describe("viewer in a browser", () => {
   it("shows the replay, detects and highlights the walking person", async () => {
     await page.waitForFunction(() => (window as unknown as { mrs6000?: { processor: { objects: { confirmed: unknown[] } | null } } })
       .mrs6000?.processor.objects?.confirmed.length, null, { timeout: 30_000 });
-    expect(await page.textContent("#subtitle")).toBe("replaying synthetic.mrsstream");
+    expect(await page.textContent("#subtitle")).toBe("replaying synthetic.tpc");
     expect(await page.isVisible("#transport")).toBe(true);
     expect(await page.textContent("#geom")).toBe("24 × 301");
     await page.waitForSelector("#objList .orow");

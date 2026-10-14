@@ -21,7 +21,13 @@ export interface GeometryOptions {
   cells?: Int32Array | null;   // radial-cell slot per beam (−1 = none), for colorBy "cell"
   fill?: Float32Array | null;  // remembered wall range per beam to draw behind moving objects (0 = none)
   fillTint?: (rgb: RGB) => RGB;
+  front?: Uint8Array | null;   // beams in front of the empty scene (1): no triangle joins them to the rest
+  seesWall?: Uint8Array | null;   // beams whose return matches their remembered wall: the fill is only joined to those
 }
+
+/** a triangle of beams in front, seen this close to edge-on (|normal · ray| below this), shows range noise
+ *  along the beam rather than surface (the spikes at a person's sides): it is not drawn (the points are) */
+export const FRONT_GRAZING = 0.12;
 
 export const FILL_DIM = 0.8;   // remembered walls are drawn a little darker than measured ones
 
@@ -86,13 +92,19 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
   // shorter diagonal; triangles spanning a depth jump are dropped. Normals: area-weighted sums.
   Nn.fill(0);
   let fillPass = false;                                   // then only triangles touching a remembered vertex
+  const Fr = o.front, side = (v: number) => v < N && Fr![v] === 1;   // remembered wall: never in front
   const addTri = (a: number, b: number, c: number) => {
     if (fillPass && a < N && b < N && c < N) return;
-    geo.tIdx[3 * nt] = a; geo.tIdx[3 * nt + 1] = b; geo.tIdx[3 * nt + 2] = c; nt++;
+    if (Fr && (side(a) !== side(b) || side(a) !== side(c))) return;   // across an object's outline
     const ax = P[3 * a], ay = P[3 * a + 1], az = P[3 * a + 2];
     const ux = P[3 * b] - ax, uy = P[3 * b + 1] - ay, uz = P[3 * b + 2] - az;
     const vx = P[3 * c] - ax, vy = P[3 * c + 1] - ay, vz = P[3 * c + 2] - az;
     const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (Fr && side(a)) {                                  // edge-on triangle of an object: a spike
+      const cx = 3 * ax + ux + vx, cy = 3 * ay + uy + vy, cz = 3 * az + uz + vz;   // 3 × centroid
+      if (Math.abs(nx * cx + ny * cy + nz * cz) < FRONT_GRAZING * Math.hypot(nx, ny, nz) * Math.hypot(cx, cy, cz)) return;
+    }
+    geo.tIdx[3 * nt] = a; geo.tIdx[3 * nt + 1] = b; geo.tIdx[3 * nt + 2] = c; nt++;
     for (const k of [a, b, c]) { Nn[3 * k] += nx; Nn[3 * k + 1] += ny; Nn[3 * k + 2] += nz; }
   };
   /** triangles of one 2×2 cell given its corners' depths (0 = not drawn) and vertex ids */
@@ -113,12 +125,13 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
   }
   // remembered wall: cells with a filled corner, joined to the measured wall around it
   const filled = (i: number, l: number) => !!F && inView(F[i], l);
+  const SW = o.seesWall, seesWall = (i: number) => !SW || SW[i] === 1;
   fillPass = true;
   if (F) for (let l = 0; l < L - 1; l++) for (let b = 0; b < B - 1; b++) {
     const a = l * B + b, r = a + 1, u = a + B, ur = u + 1;
     const fa = filled(a, l), fr = filled(r, l), fu = filled(u, l + 1), fur = filled(ur, l + 1);
     if (!fa && !fr && !fu && !fur) continue;
-    const dep = (i: number, f: boolean) => f ? F[i] : vis[i] ? D[i] : 0, id = (i: number, f: boolean) => f ? N + i : i;
+    const dep = (i: number, f: boolean) => f ? F[i] : vis[i] && seesWall(i) ? D[i] : 0, id = (i: number, f: boolean) => f ? N + i : i;
     cell(id(a, fa), id(r, fr), id(u, fu), id(ur, fur), dep(a, fa), dep(r, fr), dep(u, fu), dep(ur, fur));
   }
   for (let i = 0; i < 2 * N; i++) {

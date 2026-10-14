@@ -1,4 +1,4 @@
-# Common tasks on Linux. Needs Python ≥ 3.11 with venv, Node ≥ 22.22, make.
+# Common tasks on Linux. Needs Python ≥ 3.14 with venv, Node ≥ 22.22, make.
 # See README → Setup for installing those per OS.
 PYTHON  ?= python3
 PY      := backend/.venv/bin/python
@@ -17,8 +17,8 @@ help:
 install: backend/.venv/.installed frontend/node_modules/.installed
 
 check:
-	@$(PYTHON) -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>/dev/null || \
-	  { echo "error: need Python >= 3.11 as '$(PYTHON)' (or run: make PYTHON=/path/to/python3.12 ...)"; exit 1; }
+	@$(PYTHON) -c "import sys; sys.exit(sys.version_info < (3, 14))" 2>/dev/null || \
+	  { echo "error: need Python >= 3.14 as '$(PYTHON)' (or run: make PYTHON=/path/to/python3.14 ...)"; exit 1; }
 	@$(PYTHON) -c "import ensurepip, venv" 2>/dev/null || \
 	  { echo "error: Python's venv module is missing. Debian/Ubuntu: sudo apt install python3-venv"; exit 1; }
 	@node -e "const [a,b]=process.versions.node.split('.').map(Number); process.exit(a>24||(a===24&&b>=15)||(a===22&&b>=22)?0:1)" 2>/dev/null || \

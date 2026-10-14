@@ -45,6 +45,8 @@ describe("config", () => {
     expect(a.objects.learn).toBe(42);
     expect(a.dynamic.radius).toBeCloseTo(0.12);                // 3 × noise floor
     expect(autoConfig(base, 0.012).dynamic.radius).toBe(0.04);
+    expect(a.outline.margin).toBeCloseTo(0.16);                // 4 × noise floor
+    expect(PRESETS.off.outline.on).toBe(false);
   });
 
   it("the moving-area stages are part of the presets and survive old stored settings", () => {

@@ -33,12 +33,28 @@ export function updateBackground(m: Background, cur: Float32Array, noiseVar: Flo
   }
 }
 
-/** foreground mask: returns clearly in front of the background (scope 1: also static "detail" areas) */
+/** foreground mask: returns clearly in front of the background (scope 1: also static "detail" areas).
+ *  With the grid size (`dims`), the background is the nearest one among the beam and its 8 neighbours
+ *  (neighbourhood background): at a static depth edge a beam alternates between the near and the far
+ *  surface or returns a mixed range in between, and a real object in front of the edge is in front of both;
+ *  and a beam whose own background is "no return" (dark surface, edge, far away) is judged by its
+ *  neighbours' instead of counting every sporadic return as foreground. */
 export function foreground(m: Background, cur: Float32Array, noiseVar: Float32Array, area: Uint8Array,
-                           c: Config["objects"], out: Uint8Array): number {
+                           c: Config["objects"], out: Uint8Array, dims?: { L: number; B: number }): number {
   let n = 0;
+  const near = (i: number): number => {                       // nearest background around beam i (0 = none)
+    if (!dims) return m.bg[i];
+    const { L, B } = dims, l = (i / B) | 0, b0 = i - l * B;
+    let best = 0;
+    for (let ll = Math.max(0, l - 1); ll <= Math.min(L - 1, l + 1); ll++)
+      for (let bb = Math.max(0, b0 - 1); bb <= Math.min(B - 1, b0 + 1); bb++) {
+        const v = m.bg[ll * B + bb];
+        if (v > 0 && (best === 0 || v < best)) best = v;
+      }
+    return best;
+  };
   for (let i = 0; i < cur.length; i++) {
-    const z = cur[i], b = m.bg[i];
+    const z = cur[i], b = z > 0 ? near(i) : 0;
     const fg = z > 0 && ((b <= 0 || z < b - fgTol(c, noiseVar[i], b)) || (c.scope === 1 && area[i] === 1));
     out[i] = fg ? 1 : 0;
     n += out[i];

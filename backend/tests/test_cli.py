@@ -50,3 +50,25 @@ def test_fmt_value():
     assert cli.fmt_value([192, 168, 0, 1]) == "192.168.0.1"
     assert cli.fmt_value(1.234) == "1.23"
     assert cli.fmt_value({"a": 1}) == '{"a": 1}'
+
+
+def test_compress_and_decompress(tmp_path, capsys):
+    from mrs6000.server.stream import Recording
+    from tests.test_stream import write_recording
+    p = write_recording(tmp_path / "a.tpc", n=30)
+    raw = p.read_bytes()
+    cli.main(["compress", str(p)])
+    assert capsys.readouterr().out.startswith(f"{p}.zstd: ")
+    with Recording(f"{p}.zstd") as r:
+        assert r.compressed and r.count == 30
+    p.unlink()
+    cli.main(["decompress", f"{p}.zstd"])
+    assert p.read_bytes() == raw
+    cli.main(["decompress", f"{p}.zstd", "-o", str(tmp_path / "b.tpc")])
+    assert (tmp_path / "b.tpc").read_bytes() == raw
+    with pytest.raises(SystemExit) as e:
+        cli.main(["compress", f"{p}.zstd"])
+    assert e.value.code == f"error: ValueError: {p}.zstd: expected a .tpc file"
+    with pytest.raises(SystemExit) as e:
+        cli.main(["decompress", f"{p}.zstd", f"{p}.zstd", "-o", str(tmp_path / "c.tpc")])
+    assert e.value.code == "error: ValueError: --output needs a single input file"

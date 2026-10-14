@@ -94,7 +94,7 @@ export class RecordingPanel {
       const row = el("div", {
         className: "rrow" + (r.name === cur ? " cur" : ""), onclick: () => { if (!r.error) void run(); },
         title: r.error ? r.error : `${r.name}\n${r.scans} scans · recorded ${new Date((r.created ?? 0) * 1000).toLocaleString()}`,
-      }, el("span", { className: "nm", textContent: (r.name === cur ? "▶ " : recording ? "● " : "") + r.name.replace(/\.mrsstream$/, "") }),
+      }, el("span", { className: "nm", textContent: (r.name === cur ? "▶ " : recording ? "● " : "") + r.name.replace(/\.(tpc(\.zstd)?|mrsstream)$/, "") }),
          el("span", { className: "mt", textContent: r.error ? "unreadable" : `${fmtTime(r.seconds)} · ${fmtMB(r.bytes)}` }));
       row.append(play, dl, del);
       return row;

@@ -2,7 +2,7 @@
 
   feed.py    latest frame + long-poll wait
   frames.py  wire format of /api/frame (float32 blocks + meta)
-  stream.py  .mrsstream recordings (format, random access, recorder)
+  stream.py  .tpc / .tpc.zstd recordings (format, random access, recorder)
   hub.py     source switching (live sensor / replay), playback control
   status.py  REST status poller
   health.py  short console logging, retry/restart helpers

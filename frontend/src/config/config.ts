@@ -13,6 +13,7 @@ export interface Config {
   cells: { on: boolean; colBeams: number; colLayers: number; window: number; k: number; confirm: number; hold: number };
   planes: { on: boolean; wb: number; wl: number; planarity: number; minPts: number; minCos: number; tolAbs: number; tolRel: number; noiseFlat: number };
   mesh: { jump: number; jumpRel: number };
+  outline: { on: boolean; margin: number };
   objects: { on: boolean; scope: number; learn: number; minDiff: number; theta: number; margin: number; minPoints: number; mergeDist: number; gate: number; coast: number };
 }
 export type StageKey = keyof Config;
@@ -143,6 +144,13 @@ export const STAGES: Stage[] = [
       { k: "mergeDist", label: "Merge fragments within", min: 0, max: 1, step: 0.05, unit: " m" },
       { k: "gate", label: "Tracking gate", min: 0.2, max: 2, step: 0.05, unit: " m" },
       { k: "coast", label: "Keep lost objects", min: 0, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)` } ] },
+  { key: "outline", title: "Clean outlines", toggle: true,
+    help: "Where a person is in front of a wall: wall the person has just uncovered is drawn as the remembered wall " +
+          "(instead of the rough patch it would otherwise trail for a second), points hanging between the person and " +
+          "the wall (mixed pixels) are dropped, and the mesh is never joined across the outline of anything in front of " +
+          "the empty scene.",
+    params: [
+      { k: "margin", label: "Drop outline points behind the object by", min: 0.03, max: 0.5, step: 0.01, unit: " m" } ] },
   { key: "mesh", title: "Mesh / lines", toggle: false,
     help: "Neighbours further apart in distance than this are not connected (object edges).",
     params: [
@@ -160,7 +168,7 @@ export const DEFAULT_ADAPTIVE: Config["adaptive"] = { on: true, minCluster: 8, g
 export const DEFAULT_CELLS: Config["cells"] = { on: false, colBeams: 4, colLayers: 2, window: 5, k: 3, confirm: 2, hold: 2 };
 export const DEFAULT_OBJECTS: Config["objects"] = { on: true, scope: 0, learn: 20, minDiff: 0.15, theta: 10, margin: 0.08, minPoints: 8, mergeDist: 0.3, gate: 0.8, coast: 10 };
 
-type PresetPart = Pick<Config, "outlier" | "temporal" | "history" | "spatial" | "dynamic" | "planes" | "mesh">;
+type PresetPart = Pick<Config, "outlier" | "temporal" | "history" | "spatial" | "dynamic" | "planes" | "mesh" | "outline">;
 const MEDIUM: PresetPart = {
   outlier: { on: true, win: 2, need: 1, abs: 0.15, rel: 0.03 },
   temporal: { on: true, window: 10, k: 3, minGate: 0.1, confirm: 2, noiseFloor: 0.02, hold: 2 },
@@ -169,10 +177,11 @@ const MEDIUM: PresetPart = {
   dynamic: { on: true, radius: 0.08, minPts: 4, gap: 0.3 },
   planes: { on: true, wb: 4, wl: 1, planarity: 0.02, minPts: 8, minCos: 0.15, tolAbs: 0.2, tolRel: 0.03, noiseFlat: 0 },
   mesh: { jump: 0.5, jumpRel: 0.02 },
+  outline: { on: true, margin: 0.12 },
 };
 function variant(edit: (p: PresetPart) => void): PresetPart { const p = structuredClone(MEDIUM); edit(p); return p; }
 export const PRESETS: Record<"off" | "light" | "medium" | "strong", PresetPart> = {
-  off: variant(p => { for (const k of ["outlier", "temporal", "history", "spatial", "dynamic", "planes"] as const) p[k].on = false; }),
+  off: variant(p => { for (const k of ["outlier", "temporal", "history", "spatial", "dynamic", "planes", "outline"] as const) p[k].on = false; }),
   light: variant(p => {
     Object.assign(p.temporal, { window: 4, confirm: 1 });
     Object.assign(p.history, { minValid: 0.3, maxJump: 0.6, weight: 0.5 });
