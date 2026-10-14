@@ -16,6 +16,7 @@ export interface Grid {
   changed: Uint8Array; motionHold: Uint8Array;                  // adaptive: per-scan change flags, scans left "moving"
   area: Uint8Array;                                             // 0 static flat · 1 static detail · 2 moving
   work: Float32Array; out: Float32Array;                        // scratch + final ranges
+  wall: Float32Array; fill: Float32Array;                       // remembered static range; drawn behind moving objects
   rayX: Float32Array; rayY: Float32Array; rayZ: Float32Array; raysReady: boolean;
   queue: Int32Array; mark: Uint8Array;                          // BFS scratch
 }
@@ -27,7 +28,7 @@ export function createGrid(L: number, B: number): Grid {
     temporal: f(), nAvg: new Uint16Array(N), noiseVar: f(), cand: f(), candCnt: new Uint8Array(N), age: new Uint8Array(N),
     validBits: new Uint32Array(N), jumpRate: f(), frames: 0, alt: f(), altN: new Uint16Array(N),
     hist: f(), conf: f(), changed: new Uint8Array(N), motionHold: new Uint8Array(N), area: new Uint8Array(N),
-    work: f(), out: f(), rayX: f(), rayY: f(), rayZ: f(), raysReady: false,
+    work: f(), out: f(), wall: f(), fill: f(), rayX: f(), rayY: f(), rayZ: f(), raysReady: false,
     queue: new Int32Array(N), mark: new Uint8Array(N),
   };
 }
@@ -35,6 +36,6 @@ export function createGrid(L: number, B: number): Grid {
 /** forget all per-beam history (after a seek, preset change, ...) */
 export function resetHistory(g: Grid): void {
   for (const a of [g.temporal, g.nAvg, g.noiseVar, g.cand, g.candCnt, g.age, g.validBits, g.jumpRate, g.alt, g.altN,
-                   g.changed, g.motionHold, g.area]) a.fill(0);
+                   g.changed, g.motionHold, g.area, g.wall, g.fill]) a.fill(0);
   g.frames = 0;
 }

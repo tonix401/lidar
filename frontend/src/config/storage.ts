@@ -30,5 +30,6 @@ export const KEYS = {
   layerBias: "mrs6000.layerbias.v2",
   mount: "mrs6000.mount.v2",
   view: "mrs6000.view",
+  fillWalls: "mrs6000.fillWalls",
   objectToggle: (k: string) => "mrs6000.obj." + k,
 } as const;

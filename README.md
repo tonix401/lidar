@@ -134,6 +134,12 @@ The scan is handled as an organized range image (layer × beam), in this order:
    - **Radial cells** (`cells.ts`, experimental, off by default, see below).
 8. **Plane flattening**: PCA plane fit per point; the point moves along its ray when the patch is flat within about 2× the noise floor.
 9. **Organized mesh**: breaks at depth jumps.
+10. **Remembered walls** (`wall.ts`, display option "Walls behind moving objects", on by default):
+    - Each beam returns one range, so a person hides the wall behind them and leaves a person-shaped shadow in it.
+    - Each beam remembers its last static output range, but only if it is not in front of the object detector's empty-scene background, so a person standing still is never remembered as wall.
+    - That background starts as the first scan and only learns within 0.3 s that a wall is behind whatever stood there; a remembered range that turns out to be in front of it is replaced by it.
+    - Where a moving beam, or any return in front of the empty scene, hides the remembered surface, the surface is drawn too (a little darker), as a second vertex per beam meshed with the wall around it (`render/geometry.ts`: vertex N + i).
+    - On both recordings, 99.6–100 % of the hidden wall beams are filled once the wall behind has been seen, with at most 7 beams per scan drawn more than 0.3 m in front of the empty scene.
 
 **Auto mode** (the default) derives all settings from the measured noise floor (the median σ of steady beams). The intensity filter and object detection always stay user-controlled. **Manual mode** keeps its own settings.
 
@@ -285,4 +291,5 @@ Nothing crashes on a sensor or network problem; everything retries on its own.
   - `mrs6000.layerbias.v2`
   - `mrs6000.mount.v2`
   - `mrs6000.view`
+  - `mrs6000.fillWalls` (remembered walls on/off)
   - `mrs6000.obj.*` (object display toggles)

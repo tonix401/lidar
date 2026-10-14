@@ -14,6 +14,7 @@ import { flattenPlanes } from "../src/pipeline/planes";
 import { Processor } from "../src/pipeline/processor";
 import { updateRays } from "../src/pipeline/rays";
 import { temporalUpdate } from "../src/pipeline/temporal";
+import { updateWall, wallFill } from "../src/pipeline/wall";
 import { castRanges, elevations, frameData, meta, type Cylinder } from "./helpers/scene";
 
 function gridFor(o = {}) {
@@ -261,6 +262,40 @@ describe("radial cells", () => {
     expect(Math.min(...holes(r))).toBeGreaterThan(2.5);
     r = scan(c, g, cfg, [person(0)], k++, hole);
     expect(Math.max(...holes(r))).toBe(0);                      // third scan: no longer held
+  });
+});
+
+describe("remembered walls", () => {
+  const o = { floorZ: -50 }, person = { x: 3, y: 0, r: 0.25, z0: -1, z1: 1 };
+  const flag = (g: ReturnType<typeof gridFor>, D: Float32Array, bg: Float32Array) => {
+    g.motionHold.fill(0);
+    for (let i = 0; i < g.N; i++) if (D[i] > 0 && D[i] < bg[i] - 0.3) g.motionHold[i] = 5;
+  };
+
+  it("draws the wall behind a person who walks in front of it, and nothing once they are gone", () => {
+    const g = gridFor(o), cfg = defaultConfig(), wall = castRanges(o), withPerson = castRanges({ ...o, objects: [person] });
+    updateWall(g, wall, wall, cfg);                            // empty scene seen first
+    flag(g, withPerson, wall);
+    expect(wallFill(g, withPerson, wall, cfg, g.fill)).toBeGreaterThan(50);
+    for (let i = 0; i < g.N; i++) {
+      if (g.motionHold[i]) expect(g.fill[i]).toBeCloseTo(wall[i], 5);
+      else expect(g.fill[i]).toBe(0);
+    }
+    g.motionHold.fill(0);                                      // standing still: not moving, still in front of the wall
+    expect(wallFill(g, withPerson, wall, cfg, g.fill)).toBeGreaterThan(50);
+    flag(g, wall, wall);
+    expect(wallFill(g, wall, wall, cfg, g.fill)).toBe(0);
+  });
+
+  it("never remembers a person as wall, and forgets what the background later sees through", () => {
+    const g = gridFor(o), cfg = defaultConfig(), wall = castRanges(o), withPerson = castRanges({ ...o, objects: [person] });
+    updateWall(g, withPerson, wall, cfg);                      // person in front of the known empty scene: not adopted
+    expect(Array.from(g.wall).filter((w, i) => w > 0 && w < wall[i] - 0.3)).toHaveLength(0);
+    updateWall(g, withPerson, withPerson, cfg);                // background still thinks the person is the scene
+    const i = Array.from({ length: g.N }, (_, j) => j).find(j => withPerson[j] < wall[j] - 0.3)!;
+    expect(g.wall[i]).toBeCloseTo(withPerson[i], 5);
+    updateWall(g, new Float32Array(g.N), wall, cfg);           // background learned the wall behind
+    expect(g.wall[i]).toBeCloseTo(wall[i], 5);
   });
 });
 

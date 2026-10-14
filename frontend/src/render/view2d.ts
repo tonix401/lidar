@@ -273,7 +273,7 @@ export class View2D {
       for (let k = 0; k < d.geo.np; k++) {
         const j = d.geo.pIdx[k], dx = this.top.cx - P[3 * j + 1] * this.top.scale - mx, dy = this.top.cy - P[3 * j] * this.top.scale - my;
         const d2 = dx * dx + dy * dy;
-        if (d2 < best) { best = d2; i = j; }
+        if (d2 < best) { best = d2; i = j % d.grid.N; }        // remembered-wall vertices: N + beam
       }
       return i;
     }

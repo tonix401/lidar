@@ -76,6 +76,11 @@ export class ObjectDetector {
       }
       return [0.85, 0.85, 0.85];                      // segmented, not yet confirmed
     }
+    return this.tintBackground(rgb, opts);
+  }
+
+  /** colour of a background point (not part of any object) */
+  tintBackground(rgb: RGB, opts: { dimBackground: boolean }): RGB {
     // dim only while something is highlighted; colours are linear and shown as sRGB: 0.12 ≈ 38 % brightness
     return opts.dimBackground && this.hasConfirmed ? scale(rgb, DIM_BACKGROUND) : rgb;
   }
