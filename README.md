@@ -8,30 +8,38 @@ Tools for a SICK MRS6224R LiDAR at `192.168.178.200`:
 
 ## Setup
 
-You need **Python ≥ 3.11** (with `venv`), **Node.js ≥ 22.22 or 24**, **make** and **git**. Chrome or Chromium is only needed for the browser test.
+You need **Python ≥ 3.11** (with `venv`), **Node.js 22.22+ or 24.15+**, **make** and **git**. Chrome or Chromium is only needed for the browser test.
 
-| Linux distribution | Install the prerequisites |
+| Distribution | Install the prerequisites |
 |---|---|
-| Debian / Ubuntu | `sudo apt install python3 python3-venv make git`, then Node 24 from [nodejs.org](https://nodejs.org) or `nvm install 24` (the distro's `nodejs` is usually too old) |
+| Arch / Manjaro / EndeavourOS | `sudo pacman -S python nodejs npm make git` (optional: `chromium`) |
+| Debian / Ubuntu / Mint | `sudo apt install python3 python3-venv make git`, then Node 24 from [nodejs.org](https://nodejs.org) or `nvm install 24` (the distro's `nodejs` is usually too old) |
 | Fedora | `sudo dnf install python3 make git nodejs` (check `node --version`) |
 | NixOS | `nix-shell` in the repo (see `shell.nix`) |
+| Other | Python 3 + venv, make and git from the package manager; Node from the distro if new enough, else [nvm](https://github.com/nvm-sh/nvm) `install 24` |
 
-`make install` checks the versions and says what's missing.
+`make install` checks the versions and says what's missing. You don't have to run it first: `run`, `dev` and the test targets install automatically.
 
-```sh
-make install                   # backend/.venv (editable, dev extras) + frontend/node_modules
-make run                       # build the frontend, serve everything on http://localhost:8000
-make run ARGS="--replay recordings/<file>.mrsstream"
-make run ARGS="--offline --replay recordings/<file>.mrsstream"   # never touch the sensor
-make dev                       # backend :8000 + Vite hot reload on http://localhost:5173
-make test                      # pytest + typecheck + vitest + browser end-to-end test
-```
+| Command | What it does |
+|---|---|
+| `make install` | `backend/.venv` (editable, dev extras) + `frontend/node_modules`; reruns only when dependencies change |
+| `make run` | Build the frontend, serve everything on http://localhost:8000 |
+| `make run ARGS="--replay recordings/<file>.mrsstream"` | Replay a recording |
+| `make run ARGS="--offline --replay recordings/<file>.mrsstream"` | Replay without ever touching the sensor |
+| `make dev` | Backend :8000 + Vite hot reload on http://localhost:5173 (also takes `ARGS`) |
+| `make test` | pytest + typecheck + vitest + browser end-to-end test (`test-backend`, `test-frontend`, `test-e2e` run each part) |
+| `make browser` | Download Playwright's Chromium (about 150 MB), only if you have no Chrome/Chromium |
+| `make clean` | Remove build output and test artifacts |
 
-- **Recordings:** they are not in git (too big), so share `.mrsstream` files separately (download button in the viewer) and put them in `recordings/`.
-- **Several Pythons installed:** pick one with `make install PYTHON=python3.12`.
-- **The browser test** looks for `$CHROMIUM`, then `chromium` / `google-chrome` on PATH.
-  - If there is none, run `make browser`, which downloads Playwright's Chromium (about 150 MB).
-  - On a bare Linux it may also need system libraries: `cd frontend && sudo npx playwright-core install-deps chromium`.
+| Problem | Fix |
+|---|---|
+| Python too old, or several installed | `make install PYTHON=python3.12` (or a full path) |
+| "venv module is missing" | Install the distro's venv package, e.g. `python3-venv` on Debian/Ubuntu |
+| Node too old | `nvm install 24`, then `make install` in the same shell |
+| Browser test finds no Chromium | It looks for `$CHROMIUM`, then `chromium` / `google-chrome` on PATH. Install one, set `CHROMIUM=/path/to/browser`, or run `make browser` |
+| Playwright's Chromium won't start (bare system) | `cd frontend && sudo npx playwright-core install-deps chromium` |
+
+**Recordings** are not in git (too big): share `.mrsstream` files separately (download button in the viewer) and put them in `recordings/`.
 
 Without `make`:
 
