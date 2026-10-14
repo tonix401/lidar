@@ -19,7 +19,7 @@ import type { Config } from "../config/config";
 import { fgTol } from "../objects/background";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
-import { DROPPED, FRONT, onWall, WALL_N, wallTol } from "./wall";
+import { DROPPED, FRONT, onWall, wallTol } from "./wall";
 
 /** moving beams that see their remembered wall are drawn as it; `learn` (once per scan) averages them into
  *  a memory that rests on few readings. Returns how many. */
@@ -28,7 +28,7 @@ export function snapToWall(g: Grid, D: Float32Array, cfg: Config, learn: boolean
   let n = 0;
   for (let i = 0; i < g.N; i++) {
     if (!isMoving(g, i, cfg) || !onWall(g, i, D[i], cfg)) continue;
-    if (learn && wallN[i] < WALL_N) { wallN[i]++; wall[i] += (D[i] - wall[i]) / wallN[i]; }
+    if (learn && wallN[i] < cfg.walls.n) { wallN[i]++; wall[i] += (D[i] - wall[i]) / wallN[i]; }
     D[i] = wall[i]; n++;
   }
   return n;

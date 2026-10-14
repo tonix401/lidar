@@ -5,7 +5,7 @@ These run server-side (`backend/src/mrs6000/server/`: `stream.py` for the format
 - **Recording:** the **● Record** button in the panel saves the *live* stream to `recordings/rec_YYYYmmdd_HHMMSS.tpc.zstd`, zstd-compressed (lossless) to about 7.5 MB per minute. It keeps recording while you watch a replay.
   - A writer thread compresses in chunks of 25 scans (2.5 s), so the live stream never waits on it. A file being recorded can be replayed up to its last complete chunk, and a crash loses at most the last 2.5 s.
 - **Compress / decompress files:** `mrs6000 decompress x.tpc.zstd` (or plain `zstd -d`) gives `x.tpc`; `mrs6000 compress x.tpc` gives `x.tpc.zstd` again. Both keep the input. Replay reads both.
-- **Recordings list:** play, download, delete.
+- **Recordings list:** name and duration, ▶ to play (or click the row), ⋯ for the size, scan count, date, Download and Delete ([viewer.md](viewer.md#panel)).
 - **Transport bar** (shown while replaying):
   - Step back / play-pause / step forward, a seek slider, speed 0.25–4×, loop, and "● Live".
   - Keys: Space = play/pause, ←/→ = step.

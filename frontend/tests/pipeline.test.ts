@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultConfig } from "../src/config/config";
+import { DEFAULT_WALLS, defaultConfig, withPreset } from "../src/config/config";
 import { bilateral } from "../src/pipeline/bilateral";
 import { Cells } from "../src/pipeline/cells";
 import { dynSmooth } from "../src/pipeline/dynsmooth";
@@ -15,7 +15,8 @@ import { Processor } from "../src/pipeline/processor";
 import { updateRays } from "../src/pipeline/rays";
 import { temporalUpdate } from "../src/pipeline/temporal";
 import { dropMixed, frontMask, snapToWall } from "../src/pipeline/outline";
-import { DROPPED, FRONT, updateWall, WALL_CONFIRM, WALL_N, wallFill } from "../src/pipeline/wall";
+import { DROPPED, FRONT, updateWall, wallFill } from "../src/pipeline/wall";
+const WALL_N = DEFAULT_WALLS.n, WALL_CONFIRM = DEFAULT_WALLS.confirm;
 import { castRanges, elevations, frameData, meta, type Cylinder } from "./helpers/scene";
 
 function gridFor(o = {}) {
@@ -444,5 +445,30 @@ describe("processor", () => {
     expect(g.frames).toBe(0);
     expect(() => p.ingest(new Float32Array(10), m)).toThrow(/expected/);
     expect(elevations(24)[23]).toBeCloseTo(1.2);
+  });
+
+  it("the off preset shows the raw ranges, even with a person walking and a learned layer offset", () => {
+    const p = new Processor(withPreset(defaultConfig(), "off"));
+    p.setLayerBias(Array.from({ length: 24 }, (_, l) => (l % 2 ? 0.02 : -0.02)));
+    const m = meta();
+    for (let k = 0; k < 30; k++) {
+      const objects: Cylinder[] = k < 10 ? [] : [{ x: 3, y: -1 + 0.08 * k, r: 0.22, z0: -1, z1: 0.9 }];
+      const d = frameData({ floorZ: -1.2, noise: 0.02, seed: k + 1, quantize: true, objects });
+      p.ingest(d, { ...m, ts: 1000 + k / 10 });
+      expect(Array.from(p.grid!.out)).toEqual(Array.from(d.subarray(0, p.grid!.N)));
+      expect(p.grid!.fill.every(v => v === 0)).toBe(true);        // no remembered wall drawn
+    }
+  });
+
+  it("remembered walls can be switched off: the memory is dropped and nothing is drawn behind objects", () => {
+    const cfg = defaultConfig(), p = new Processor(cfg);
+    const m = meta(), o = { floorZ: -1.2 };
+    for (let k = 0; k < 15; k++) p.ingest(frameData({ ...o, noise: 0.01, seed: k + 1 }), { ...m, ts: 1000 + k / 10 });
+    expect(p.grid!.wallN.some(n => n > 0)).toBe(true);
+    p.cfg = { ...cfg, walls: { ...DEFAULT_WALLS, on: false } };
+    for (let k = 15; k < 25; k++)
+      p.ingest(frameData({ ...o, noise: 0.01, seed: k + 1, objects: [{ x: 3, y: 0, r: 0.22, z0: -1, z1: 0.9 }] }), { ...m, ts: 1000 + k / 10 });
+    expect(p.grid!.wallN.every(n => n === 0)).toBe(true);
+    expect(p.grid!.fill.every(v => v === 0)).toBe(true);
   });
 });

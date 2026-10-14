@@ -36,21 +36,51 @@ The scan is handled as an organized range image (layer × beam), in this order:
     - **Mixed pixels, wall side:** a beam next to the outline that is not in front but more than 3σ in front of its remembered wall is put back onto the wall.
     - **Mesh:** no triangle joins a beam in front to one that isn't (the mesh's own jump threshold, 0.3 m + 3 %, is larger than the gap between a person and the wall right behind them), and a triangle of beams in front seen within ~7° of edge-on (|n·ray| < 0.12) is not drawn: it shows range noise along the beam, not surface (the points stay). The remembered wall is only joined to measured beams that see their remembered wall.
     - Measured as triangles next to objects within ~6° of edge-on (spikes), stage off → on: `rec_20261014_223527` 202 → 70 per scan, `rec_20261014_185611` 371 → 150; in the page at a person walking at 0.9 m/s (0:29), 117 → 7. Object beams still drawn: 96.4 → 93.1 % and 94.7 → 89.0 % (mixed pixels dropped). The wall behind a person: roughness 3.6 → 2.2 mm and 7.0 → 6.4 mm, jitter → 0.
-11. **Remembered walls** (`wall.ts`, display option "Walls behind moving objects", on by default):
+11. **Remembered walls** (`wall.ts`, stage "Remembered walls", on by default; drawing them is the Display option "Walls behind moving objects"):
     - Each beam returns one range, so a person hides the wall behind them and leaves a person-shaped shadow in it.
-    - Each beam remembers the average of its static output ranges (up to 20, `wallN`), but only if they are not in front of the object detector's empty-scene background, so a person standing still is never remembered as wall. Averaging matters: a beam the person has just left restarts its temporal average, and remembering only the latest static output made the wall behind people about 3× rougher than the wall itself.
+    - Each beam remembers the average of its static output ranges (up to `n` = 20, `wallN`), but only if they are not in front of the object detector's empty-scene background, so a person standing still is never remembered as wall. Averaging matters: a beam the person has just left restarts its temporal average, and remembering only the latest static output made the wall behind people about 3× rougher than the wall itself.
     - That background starts as the first scan and only learns within 0.3 s that a wall is behind whatever stood there; a remembered range that turns out to be in front of it is replaced by it (one raw reading, refined by every later return that matches it).
-    - A remembered wall only changes after a new static surface has been seen 5 scans in a row. When drawn, a value that sticks out from its neighbours' memories (5 cm + 1 %) is replaced by their median, and a young memory (fewer than 20 readings) by a plane through its neighbours' memories, intersected with its beam. Single readings at outlines are often mixed pixels, and remembering one draws a spike.
+    - A remembered wall only changes after a new static surface has been seen `confirm` = 5 scans in a row (`wallCand`).
+    - When drawn, a value that sticks out from its neighbours' memories by more than 3σ (`wallTol`) is replaced by their median. Single readings at outlines are often mixed pixels, and remembering one draws a spike.
+    - A young memory (fewer than `n` readings) is replaced by a plane through its neighbours' memories (weighted by their readings), intersected with its beam. The flatness check is `smallestEigenvector(...) > -0.5`: it returns −1 for a degenerate fit, while an exactly flat patch gives about −1e-17.
+    - `wallTol` = 3 × max(noise floor, beam σ) × √(1 + 1/readings). The memory's own uncertainty is in it, which matters for young memories. It replaced a fixed 5 cm + 1 %, so that the threshold follows the measured noise instead of a picked number (the same goes for the mesh's `seesWall` test).
+    - The mesh joins the drawn wall only to measured beams that see their remembered wall (`g.seesWall`, set by `wallFill`), so it never bridges to the person.
+    - Switching the stage off forgets every remembered surface (`forgetWalls`), and nothing is drawn behind objects. Clean outlines then only use the empty-scene background.
     - Where a moving beam, or any return in front of the empty scene, hides the remembered surface, the surface is drawn too (a little darker), as a second vertex per beam meshed with the wall around it (`render/geometry.ts`: vertex N + i).
     - On both recordings, 99.6–100 % of the hidden wall beams are filled once the wall behind has been seen, with at most 7 beams per scan drawn more than 0.3 m in front of the empty scene.
 
 ## Auto and manual mode
 
-**Auto mode** (the default) derives all settings from the measured noise floor (the median σ of steady beams). The intensity filter and object detection always stay user-controlled. **Manual mode** keeps its own settings.
+**Auto mode** (the default) derives the settings from the measured noise floor `nf` (`config/auto.ts`):
+- **Noise floor** (`estimateNoise`): the median σ of steady beams, i.e. established (5 or more scans averaged), rarely jumping (< 10 %), not moving and with a value. It needs more than 200 such beams and 10 scans, is quantised to 1 mm so settings don't jitter, and is clamped to 12–80 mm. It is re-estimated every 10 scans.
+- **Rules from the literature:**
+  - a z-gate of 3σ per beam;
+  - tolerances scale with `nf` and with range × tan(beam step), about 1 % of range per beam step;
+  - the bilateral range σ follows each beam's own noise;
+  - "flat" = a plane residual within about 2σ of the noise floor;
+  - motion: an established model, a cluster filter, seeds grown into the object, short persistence (Dynablox).
+- **Values:**
+  - outlier tolerance max(0.1 m, 5·nf);
+  - temporal window 20, gate 3σ, min. gate max(6 cm, 2.5·nf);
+  - bilateral σ 1.5·nf, ≥ 2× beam σ;
+  - moving-area radius max(4 cm, 3·nf);
+  - plane tolerance max(0.1 m, 5·nf), flat test 2× noise floor;
+  - mesh break 0.3 m + 3 %;
+  - clean-outline margin max(0.1 m, 4·nf).
+- **What stays yours** (`USER_STAGES`, `USER_TOGGLES` in `config/config.ts`):
+  - the intensity filter, radial cells, remembered walls and object detection (content choices and experiments, not quality tuning);
+  - the on/off switch of clean outlines (its margin stays automatic).
+
+  The panel shows the auto-set stages read-only with their current values ([viewer.md](viewer.md#panel)).
+
+**Manual mode** keeps its own settings (stored separately, so switching back and forth keeps both). Its **presets** set the smoothing stages (outlier, temporal, history, spatial, moving-area, planes, mesh, clean outlines):
+- **light / medium / strong:** shorter or longer averaging, weaker or stronger spatial smoothing and plane flattening. Medium is the default.
+- **off = the raw ranges.** It also switches off the stages that change ranges outside the presets: intensity filter, layer calibration, adaptive processing, radial cells and remembered walls. A test checks that the output then equals the input on every scan, with a person walking and calibration offsets loaded. Picking another preset switches layer calibration, adaptive processing and remembered walls back on, and leaves the opt-in ones (intensity filter, radial cells) as they were. Object detection is never touched: it only reads the ranges.
+- Changing any preset stage by hand shows "custom". A preset (and "Reset to defaults") restarts the per-beam histories, so the next few scans are empty or raw until the model is re-established.
 
 ## Metrics and results
 
-**Moving-area metrics** (panel row "Moving areas", `Processor.stats`, `pipeline/metrics.ts`):
+**Moving-area metrics** (Statistics box, "Moving areas (people)", `Processor.stats`, `pipeline/metrics.ts`):
 - *rough*: median deviation of a moving beam from its same-surface 3×3 neighbours (mm).
 - *flicker*: share of moving beams that switched between object and background (the object detector's empty-scene model) since the last scan.
 
@@ -86,10 +116,6 @@ Columns of 4 × 2 beams radiating from the sensor, each with up to 4 depth slots
 
 The device runs on the last echo. Record the same walk with `mrs6000 echo-filter first` and with `last` (no `--save`; restore afterwards) and compare *flicker* and the outline. Streaming several echoes (`cola.py` parses them, `stream.py` and `frames.py` only send `echoes[0]`) is only worth it if the difference is large. Recording more echoes would also need a `.tpc` format change ([recordings.md](recordings.md)).
 
-## Views
+## Views and panel
 
-- 3D, with Perspective / Top / level Side / Front cameras and the FOV fan.
-- 2D map (top-down).
-- Range image with square cells. Grey means no return; pink means removed by filters.
-- 3D renders on demand (about 10 renders/s with a still camera).
-- Defaults: draw **surface + points**, colour by **distance**.
+See [viewer.md](viewer.md): the three views, draw modes, the panel, keys, the theme, and how the panel is built.

@@ -14,9 +14,13 @@ export interface Config {
   planes: { on: boolean; wb: number; wl: number; planarity: number; minPts: number; minCos: number; tolAbs: number; tolRel: number; noiseFlat: number };
   mesh: { jump: number; jumpRel: number };
   outline: { on: boolean; margin: number };
+  walls: { on: boolean; n: number; confirm: number };
   objects: { on: boolean; scope: number; learn: number; minDiff: number; theta: number; margin: number; minPoints: number; mergeDist: number; gate: number; coast: number };
 }
 export type StageKey = keyof Config;
+
+/** 3D view, 2D map (top), range image */
+export type ViewMode = "3d" | "top" | "image";
 
 export interface Param {
   k: string;
@@ -27,6 +31,7 @@ export interface Param {
   unit?: string;
   pct?: boolean;                       // shown as % of range
   fmt?: (v: number) => string;
+  edit?: { scale: number; unit: string };   // typed value = stored × scale (default: as stored, in `unit`)
 }
 export interface Stage {
   key: StageKey;
@@ -36,7 +41,8 @@ export interface Stage {
   note?: string;
   preset?: false;                      // not part of the smoothing presets
   extra?: "histogram" | "layerbias";
-  host?: "objects";                    // rendered in the Objects panel section instead of Surface
+  host?: "objects" | "display";        // rendered with the object detection / display settings instead of the stage list
+  views?: ViewMode[];                  // only shown in these views (default: all)
   params: Param[];
 }
 
@@ -52,7 +58,7 @@ export const STAGES: Stage[] = [
           "its neighbouring layers. Mean, bottom-to-top trend and slow bow are pinned to zero (unmeasurable " +
           "from plane fits, they would otherwise drift into tilted or bulging walls), so scale and verticality are untouched.",
     params: [
-      { k: "rate", label: "Learning rate", min: 0, max: 1, step: 0.05, fmt: v => v ? Math.round(v * 100) + " % per update" : "frozen" } ] },
+      { k: "rate", label: "Learning rate", min: 0, max: 1, step: 0.05, fmt: v => v ? Math.round(v * 100) + " % per update" : "frozen", edit: { scale: 100, unit: "% per update" } } ] },
   { key: "adaptive", title: "Adaptive per area", toggle: true, preset: false,
     help: "Detects moving areas (clusters of beams whose new value breaks their own history) and processes them " +
           "lightly: no long averaging or confirmation delay, no flicker removal, little spatial smoothing, no plane " +
@@ -60,7 +66,7 @@ export const STAGES: Stage[] = [
     params: [
       { k: "minCluster", label: "Min. moving cluster", min: 1, max: 60, step: 1, unit: " beams" },
       { k: "growBeams", label: "Grow into object", min: 0, max: 30, step: 1, unit: " steps" },
-      { k: "hold", label: "Stay 'moving' after last change", min: 1, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)` },
+      { k: "hold", label: "Stay 'moving' after last change", min: 1, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)`, edit: { scale: 1, unit: "scans" } },
       { k: "dynWindow", label: "Averaging in moving areas", min: 1, max: 5, step: 1, unit: " scans" },
       { k: "dynSpatial", label: "Spatial window in moving areas", min: 0, max: 6, step: 1, unit: " beams" } ] },
   { key: "outlier", title: "Outlier filter", toggle: true, note: "Applies to new scans.",
@@ -76,18 +82,18 @@ export const STAGES: Stage[] = [
           "switches (single spikes are ignored, real motion is followed).",
     params: [
       { k: "window", label: "Max. averaging window", min: 1, max: 60, step: 1, unit: " scans" },
-      { k: "k", label: "Change gate", min: 1.5, max: 8, step: 0.5, fmt: v => v.toFixed(1) + " σ" },
+      { k: "k", label: "Change gate", min: 1.5, max: 8, step: 0.5, fmt: v => v.toFixed(1) + " σ", edit: { scale: 1, unit: "σ" } },
       { k: "minGate", label: "Min. gate", min: 0.03, max: 0.5, step: 0.01, unit: " m" },
       { k: "confirm", label: "Confirm change after", min: 1, max: 5, step: 1, unit: " scans" },
-      { k: "noiseFloor", label: "Noise floor σ", min: 0.005, max: 0.1, step: 0.001, fmt: v => Math.round(v * 1000) + " mm" },
+      { k: "noiseFloor", label: "Noise floor σ", min: 0.005, max: 0.1, step: 0.001, fmt: v => Math.round(v * 1000) + " mm", edit: { scale: 1000, unit: "mm" } },
       { k: "hold", label: "Hold through dropouts", min: 0, max: 10, step: 1, unit: " scans" } ] },
   { key: "history", title: "History filter", toggle: true,
     help: "Uses each beam's last 32 scans: drops beams that flicker (rarely valid or often jumping — mixed pixels " +
           "at edges, dust, reflections) and lets stable beams count more in spatial smoothing and plane fits.",
     params: [
-      { k: "minValid", label: "Min. valid in history", min: 0, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + " %" },
-      { k: "maxJump", label: "Max. jump rate", min: 0.05, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + " %" },
-      { k: "weight", label: "Confidence weighting", min: 0, max: 3, step: 0.25, fmt: v => v ? "×" + v.toFixed(2) : "off" } ] },
+      { k: "minValid", label: "Min. valid in history", min: 0, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + " %", edit: { scale: 100, unit: "%" } },
+      { k: "maxJump", label: "Max. jump rate", min: 0.05, max: 1, step: 0.05, fmt: v => Math.round(v * 100) + " %", edit: { scale: 100, unit: "%" } },
+      { k: "weight", label: "Confidence weighting", min: 0, max: 3, step: 0.25, fmt: v => v ? "×" + v.toFixed(2) : "off", edit: { scale: 1, unit: "× (0 = off)" } } ] },
   { key: "spatial", title: "Spatial smoothing", toggle: true,
     help: "Edge-preserving bilateral filter on the range image.",
     params: [
@@ -95,7 +101,7 @@ export const STAGES: Stage[] = [
       { k: "wl", label: "Window across layers", min: 0, max: 2, step: 1, unit: " layers" },
       { k: "srAbs", label: "Edge sensitivity σ", min: 0.01, max: 0.3, step: 0.005, unit: " m" },
       { k: "srRel", label: "σ growth", min: 0, max: 0.05, step: 0.001, pct: true },
-      { k: "srNoise", label: "σ from beam noise", min: 0, max: 5, step: 0.5, fmt: v => v ? `≥ ${v}× beam σ` : "off" } ] },
+      { k: "srNoise", label: "σ from beam noise", min: 0, max: 5, step: 0.5, fmt: v => v ? `≥ ${v}× beam σ` : "off", edit: { scale: 1, unit: "× beam σ (0 = off)" } } ] },
   { key: "dynamic", title: "Moving-area smoothing", toggle: true, note: "Needs 'Adaptive per area'; replaces its 'Spatial window in moving areas'.",
     help: "3D smoothing within one scan for moving areas (people), which the other stages pass through almost raw: " +
           "each moving point becomes the weighted mean of the 3D points within the radius around it (moving or in front " +
@@ -115,7 +121,7 @@ export const STAGES: Stage[] = [
       { k: "colBeams", label: "Column width", min: 1, max: 16, step: 1, unit: " beams" },
       { k: "colLayers", label: "Column height", min: 1, max: 6, step: 1, unit: " layers" },
       { k: "window", label: "Max. averaging", min: 1, max: 30, step: 1, unit: " scans" },
-      { k: "k", label: "Follow beyond", min: 1, max: 8, step: 0.5, fmt: v => v.toFixed(1) + " σ" },
+      { k: "k", label: "Follow beyond", min: 1, max: 8, step: 0.5, fmt: v => v.toFixed(1) + " σ", edit: { scale: 1, unit: "σ" } },
       { k: "confirm", label: "Show after", min: 1, max: 5, step: 1, unit: " hits" },
       { k: "hold", label: "Fill dropouts for", min: 0, max: 10, step: 1, unit: " scans" } ] },
   { key: "planes", title: "Flatten planes", toggle: true,
@@ -128,7 +134,7 @@ export const STAGES: Stage[] = [
       { k: "minCos", label: "Min. incidence", min: 0, max: 0.6, step: 0.01, fmt: v => Math.round(Math.asin(v) / DEG) + "° to surface" },
       { k: "tolAbs", label: "Same-surface tolerance", min: 0.05, max: 0.5, step: 0.01, unit: " m" },
       { k: "tolRel", label: "Tolerance growth", min: 0, max: 0.1, step: 0.005, pct: true },
-      { k: "noiseFlat", label: "Flat test", min: 0, max: 5, step: 0.25, fmt: v => v ? `residual ≤ ${v}× noise floor` : "curvature only" } ] },
+      { k: "noiseFlat", label: "Flat test", min: 0, max: 5, step: 0.25, fmt: v => v ? `residual ≤ ${v}× noise floor` : "curvature only", edit: { scale: 1, unit: "× noise floor (0 = curvature only)" } } ] },
   { key: "objects", title: "Object detection", toggle: true, preset: false, host: "objects",
     help: "Separates people and objects: learns the empty scene per beam (slowly, so people standing still stay " +
           "visible), takes returns clearly in front of it, groups neighbouring beams that lie on the same surface " +
@@ -143,7 +149,7 @@ export const STAGES: Stage[] = [
       { k: "minPoints", label: "Min. points per object", min: 3, max: 100, step: 1 },
       { k: "mergeDist", label: "Merge fragments within", min: 0, max: 1, step: 0.05, unit: " m" },
       { k: "gate", label: "Tracking gate", min: 0.2, max: 2, step: 0.05, unit: " m" },
-      { k: "coast", label: "Keep lost objects", min: 0, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)` } ] },
+      { k: "coast", label: "Keep lost objects", min: 0, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)`, edit: { scale: 1, unit: "scans" } } ] },
   { key: "outline", title: "Clean outlines", toggle: true,
     help: "Where a person is in front of a wall: wall the person has just uncovered is drawn as the remembered wall " +
           "(instead of the rough patch it would otherwise trail for a second), points hanging between the person and " +
@@ -151,7 +157,14 @@ export const STAGES: Stage[] = [
           "the empty scene.",
     params: [
       { k: "margin", label: "Drop outline points behind the object by", min: 0.03, max: 0.5, step: 0.01, unit: " m" } ] },
-  { key: "mesh", title: "Mesh / lines", toggle: false,
+  { key: "walls", title: "Remembered walls", toggle: true, preset: false,
+    help: "Each beam remembers the static surface it sees (averaged over its last readings). Where a person hides " +
+          "it, it is drawn behind them (Display → 'Walls behind moving objects'), and 'Clean outlines' puts uncovered " +
+          "wall back onto it. A new surface only replaces the remembered one after it has stayed for a few scans.",
+    params: [
+      { k: "n", label: "Average up to", min: 1, max: 100, step: 1, unit: " readings" },
+      { k: "confirm", label: "New surface after", min: 1, max: 30, step: 1, unit: " scans" } ] },
+  { key: "mesh", title: "Mesh / lines", toggle: false, host: "display", views: ["3d", "top"],
     help: "Neighbours further apart in distance than this are not connected (object edges).",
     params: [
       { k: "jump", label: "Break at jump", min: 0.05, max: 3, step: 0.05, unit: " m" },
@@ -160,12 +173,19 @@ export const STAGES: Stage[] = [
 
 export const PRESET_KEYS = STAGES.filter(s => s.preset !== false).map(s => s.key);
 /** stages that stay user-controlled in auto mode (content choices and experiments, not quality tuning) */
-export const USER_STAGES: ReadonlySet<StageKey> = new Set<StageKey>(["intensity", "objects", "cells"]);
+export const USER_STAGES: ReadonlySet<StageKey> = new Set<StageKey>(["intensity", "objects", "cells", "walls"]);
+/** auto-tuned stages whose on/off stays the user's in auto mode (their parameters are set automatically) */
+export const USER_TOGGLES: ReadonlySet<StageKey> = new Set<StageKey>(["outline"]);
+/** the "off" preset also switches these off, so that it shows the raw ranges; the other presets switch the
+ *  default-on ones back on and leave the opt-in ones (intensity filter, radial cells) as they are */
+export const RAW_OFF: readonly StageKey[] = ["intensity", "layercal", "adaptive", "cells", "walls"];
+const DEFAULT_ON: ReadonlySet<StageKey> = new Set<StageKey>(["layercal", "adaptive", "walls"]);
 
 export const DEFAULT_INTENSITY: Config["intensity"] = { on: false, min: 0, max: 400 };
 export const DEFAULT_LAYERCAL: Config["layercal"] = { on: true, rate: 0.3 };
 export const DEFAULT_ADAPTIVE: Config["adaptive"] = { on: true, minCluster: 8, growBeams: 12, hold: 10, dynWindow: 1, dynSpatial: 1 };   // tuned on a recorded walk
 export const DEFAULT_CELLS: Config["cells"] = { on: false, colBeams: 4, colLayers: 2, window: 5, k: 3, confirm: 2, hold: 2 };
+export const DEFAULT_WALLS: Config["walls"] = { on: true, n: 20, confirm: 5 };
 export const DEFAULT_OBJECTS: Config["objects"] = { on: true, scope: 0, learn: 20, minDiff: 0.15, theta: 10, margin: 0.08, minPoints: 8, mergeDist: 0.3, gate: 0.8, coast: 10 };
 
 type PresetPart = Pick<Config, "outlier" | "temporal" | "history" | "spatial" | "dynamic" | "planes" | "mesh" | "outline">;
@@ -203,18 +223,23 @@ export type PresetName = keyof typeof PRESETS;
 
 export function defaultConfig(): Config {
   return { ...structuredClone(PRESETS.medium), intensity: { ...DEFAULT_INTENSITY }, layercal: { ...DEFAULT_LAYERCAL },
-           adaptive: { ...DEFAULT_ADAPTIVE }, objects: { ...DEFAULT_OBJECTS }, cells: { ...DEFAULT_CELLS } };
+           adaptive: { ...DEFAULT_ADAPTIVE }, objects: { ...DEFAULT_OBJECTS }, cells: { ...DEFAULT_CELLS }, walls: { ...DEFAULT_WALLS } };
 }
 
-/** cfg with a preset applied (filters, calibration, adaptivity and objects untouched) */
+/** cfg with a preset applied ("off": raw ranges, see RAW_OFF; object detection untouched) */
 export function withPreset(cfg: Config, name: PresetName): Config {
-  return { ...cfg, ...structuredClone(PRESETS[name]) };
+  const out = { ...cfg, ...structuredClone(PRESETS[name]) } as Config;
+  for (const k of RAW_OFF) (out as unknown as Record<string, unknown>)[k] =
+    { ...cfg[k], on: name === "off" ? false : DEFAULT_ON.has(k) || (cfg[k] as { on: boolean }).on };
+  return out;
 }
 
 /** name of the preset `cfg` matches, or "custom" */
 export function matchingPreset(cfg: Config): PresetName | "custom" {
   const pick = (c: PresetPart) => JSON.stringify(PRESET_KEYS.map(k => c[k as keyof PresetPart]));
-  return (Object.keys(PRESETS) as PresetName[]).find(n => pick(PRESETS[n]) === pick(cfg)) ?? "custom";
+  const on = (k: StageKey) => (cfg[k] as { on: boolean }).on;
+  return (Object.keys(PRESETS) as PresetName[]).find(n => pick(PRESETS[n]) === pick(cfg) &&
+    (n === "off" ? RAW_OFF.every(k => !on(k)) : [...DEFAULT_ON].every(on))) ?? "custom";
 }
 
 /** merge stored (possibly old or partial) settings onto defaults, keeping only known keys and types */
@@ -231,5 +256,20 @@ export function mergeConfig(base: Config, stored: unknown): Config {
   return out;
 }
 
+/** how a parameter is typed in: scale from the stored value and the unit shown next to the field */
+export function editSpec(p: Param): { scale: number; unit: string } {
+  return p.edit ?? (p.pct ? { scale: 100, unit: "% of range" } : { scale: 1, unit: (p.unit ?? "").trim() });
+}
+
+/** a typed value (in editSpec units) → the stored value: clamped to the parameter's range, whole numbers for whole steps */
+export function parseParam(p: Param, typed: number): number | null {
+  if (!isFinite(typed)) return null;
+  const v = Math.min(p.max, Math.max(p.min, typed / editSpec(p).scale));
+  return Number.isInteger(p.step) ? Math.round(v) : +v.toPrecision(6);
+}
+
 export const fmtParam = (p: Param, v: number): string => p.fmt ? p.fmt(v) : p.pct ? `+${(v * 100).toFixed(1)} % of range`
-  : (Number.isInteger(p.step) ? String(v) : v.toFixed(p.step < 0.01 ? 3 : 2)) + (p.unit || "");
+  : (Number.isInteger(p.step) ? String(v) : fixedOrExact(v, p.step < 0.01 ? 3 : 2)) + (p.unit || "");
+
+/** v with `dec` decimals, or all of its digits when it has more (a typed-in exact value) */
+const fixedOrExact = (v: number, dec: number) => +v.toFixed(dec) === v ? v.toFixed(dec) : String(+v.toPrecision(6));

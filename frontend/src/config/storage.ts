@@ -31,5 +31,9 @@ export const KEYS = {
   mount: "mrs6000.mount.v2",
   view: "mrs6000.view",
   fillWalls: "mrs6000.fillWalls",
+  maxRange: "mrs6000.maxRange",
+  theme: "mrs6000.theme",
+  panelWidth: "mrs6000.panelWidth",
   objectToggle: (k: string) => "mrs6000.obj." + k,
+  fold: (id: string) => "mrs6000.open." + id,   // collapsible panel boxes
 } as const;

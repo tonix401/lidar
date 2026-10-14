@@ -27,9 +27,16 @@ frontend/
   src/config/             settings schema + presets (config.ts), auto mode, storage
   src/pipeline/           one module per processing stage + Processor (order of stages), metrics.ts
   src/objects/            background, segmentation, Kalman, tracker, ObjectDetector
-  src/render/             geometry (pure), scene3d (three.js), view2d (canvas)
+  src/render/             geometry (pure), scene3d (three.js), sensorModel (housing mesh), view2d (canvas)
   src/api/                typed API client, frame long-poll with retry
-  src/ui/                 panel sections, problems/health display
+  src/ui/                 the panel (see docs/viewer.md, "How the panel is built"):
+    stageControls.ts      stage sections generated from STAGES (typed values, changed markers, auto read-only)
+    statsPanel.ts         the Statistics box (grouped rows, updated in place)
+    views.ts              which controls each view shows (data-views / data-draw)
+    info.ts               ⓘ icons and their floating explanation box
+    theme.ts              dark / light / system theme, colours for canvas and WebGL
+    recordingPanel.ts     Record button, recordings list and ⋯ menu, replay bar
+    devicePanel.ts objectsPanel.ts charts.ts problems.ts dom.ts
   tests/                  vitest on synthetic ray-cast scenes (tests/helpers/scene.ts), jsdom for the panel
   e2e/                    real backend (offline, generated recording) + built frontend in headless Chromium
 docs/                     this documentation

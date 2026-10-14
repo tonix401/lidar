@@ -8,14 +8,14 @@
 // background), so a person who stood still for a moment does not leave a ghost behind once they walk on.
 // That background starts as the first scan and only learns within 0.3 s that a wall is behind whatever
 // stood there; a remembered surface that turns out to be in front of it is replaced by it.
-// g.wallN counts the readings averaged into each remembered range (up to WALL_N): static outputs, and also
+// g.wallN counts the readings averaged into each remembered range (up to cfg.walls.n): static outputs, and also
 // moving beams that see the wall (outline.ts). Averaging matters: a beam the person has just left restarts
 // its temporal average, so its first static outputs are nearly raw; remembering only the latest one made
 // the wall behind people ~3× rougher than the wall itself.
-// A remembered wall only changes after a new static surface has been seen WALL_CONFIRM scans in a row
+// A remembered wall only changes after a new static surface has been seen cfg.walls.confirm scans in a row
 // (g.wallCand), and when drawn, a value that sticks out (beyond 3σ) from its neighbours' memories is replaced by their
 // median (single readings at outlines are often mixed pixels: remembering one draws a spike), and a young
-// memory (fewer than WALL_N readings, where people keep walking) is averaged with its neighbours' memories
+// memory (fewer than cfg.walls.n readings, where people keep walking) is averaged with its neighbours' memories
 // on the same surface: a plane through their 3D points (weighted by their readings), intersected with its beam.
 import type { Config } from "../config/config";
 import { sameTol, smallestEigenvector } from "../core/math";
@@ -23,7 +23,6 @@ import { fgTol } from "../objects/background";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
 
-export const WALL_N = 20, WALL_CONFIRM = 5;
 /** g.front: 1 = in front of the empty scene, DROPPED = a mixed pixel dropped at an outline (outline.ts) */
 export const FRONT = 1, DROPPED = 2;
 
@@ -39,13 +38,18 @@ export function updateWall(g: Grid, D: Float32Array, bg: Float32Array | null, cf
       const c = g.wallCand[i];
       if (g.wallCandN[i] > 0 && Math.abs(d - c) <= wallTol(g, i, cfg)) { g.wallCandN[i]++; g.wallCand[i] += (d - c) / g.wallCandN[i]; }
       else { g.wallCand[i] = d; g.wallCandN[i] = 1; }
-      if (g.wallCandN[i] >= WALL_CONFIRM) { wall[i] = g.wallCand[i]; wallN[i] = g.wallCandN[i]; g.wallCandN[i] = 0; }
+      if (g.wallCandN[i] >= cfg.walls.confirm) { wall[i] = g.wallCand[i]; wallN[i] = g.wallCandN[i]; g.wallCandN[i] = 0; }
       continue;
     }
     g.wallCandN[i] = 0;
-    if (wallN[i] < WALL_N) wallN[i]++;
-    wall[i] += (d - wall[i]) / wallN[i];
+    if (wallN[i] < cfg.walls.n) wallN[i]++;
+    wall[i] += (d - wall[i]) / Math.min(wallN[i], cfg.walls.n);   // n may have been lowered
   }
+}
+
+/** drop every remembered surface (walls stage switched off) */
+export function forgetWalls(g: Grid): void {
+  g.wall.fill(0); g.wallN.fill(0); g.wallCandN.fill(0);
 }
 
 /** 3σ of a return against beam i's remembered wall (incl. the uncertainty of a young memory) */
@@ -83,7 +87,7 @@ export function wallFill(g: Grid, D: Float32Array, bg: Float32Array | null, cfg:
       const med = nb[nb.length >> 1];
       if (Math.abs(w - med) > tol) v = med;
     }
-    if (g.wallN[i] < WALL_N) {                                // young: average with the neighbours' memories
+    if (g.wallN[i] < cfg.walls.n) {                           // young: average with the neighbours' memories
       let k = 0, W = 0, sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, sxz = 0, syy = 0, syz = 0, szz = 0;
       for (let ll = Math.max(0, l - 1); ll <= Math.min(L - 1, l + 1); ll++)
         for (let cc = Math.max(0, c - 1); cc <= Math.min(B - 1, c + 1); cc++) {
