@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mrs6000"
+version = "0.2.0"
+description = "SICK MRS6000 LiDAR access (REST, CoLa A) and the live viewer backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+preview = ["websocket-client", "msgpack"]       # only for the ~2 Hz WebSocket preview source
+dev = ["pytest>=8", "httpx2"]
+
+[project.scripts]
+mrs6000 = "mrs6000.cli:main"
+mrs6000-viewer = "mrs6000.server.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

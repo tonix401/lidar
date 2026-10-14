@@ -1,0 +1,76 @@
+import { describe, expect, it } from "vitest";
+import { autoConfig, estimateNoise } from "../src/config/auto";
+import { defaultConfig, fmtParam, matchingPreset, mergeConfig, PRESETS, STAGES, withPreset } from "../src/config/config";
+import { Store } from "../src/config/storage";
+import { createGrid } from "../src/pipeline/grid";
+
+describe("config", () => {
+  it("every stage parameter exists in the default config", () => {
+    const cfg = defaultConfig() as unknown as Record<string, Record<string, unknown>>;
+    for (const s of STAGES) for (const p of s.params) expect(typeof cfg[s.key][p.k], `${s.key}.${p.k}`).toBe("number");
+  });
+
+  it("presets round-trip and leave non-preset stages alone", () => {
+    const base = defaultConfig();
+    expect(matchingPreset(base)).toBe("medium");
+    const strong = withPreset({ ...base, objects: { ...base.objects, learn: 99 } }, "strong");
+    expect(matchingPreset(strong)).toBe("strong");
+    expect(strong.objects.learn).toBe(99);
+    expect(strong.temporal.window).toBe(PRESETS.strong.temporal.window);
+    strong.planes.wb = 11;
+    expect(matchingPreset(strong)).toBe("custom");
+    expect(PRESETS.off.temporal.on).toBe(false);
+  });
+
+  it("mergeConfig keeps only known keys of the right type", () => {
+    const m = mergeConfig(defaultConfig(), { temporal: { window: 33, k: "x", bogus: 1 }, nope: {}, objects: null });
+    expect(m.temporal.window).toBe(33);
+    expect(m.temporal.k).toBe(defaultConfig().temporal.k);
+    expect("bogus" in m.temporal).toBe(false);
+    expect(mergeConfig(defaultConfig(), "garbage")).toEqual(defaultConfig());
+  });
+
+  it("fmtParam", () => {
+    expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 1, unit: " m" }, 3)).toBe("3 m");
+    expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 0.005, pct: true }, 0.02)).toBe("+2.0 % of range");
+    expect(fmtParam({ k: "a", label: "", min: 0, max: 1, step: 0.001 }, 0.0123)).toBe("0.012");
+  });
+
+  it("auto config scales tolerances with the noise floor and keeps user stages", () => {
+    const base = defaultConfig();
+    base.objects.learn = 42;
+    const a = autoConfig(base, 0.04);
+    expect(a.temporal.noiseFloor).toBe(0.04);
+    expect(a.outlier.abs).toBeCloseTo(0.2);
+    expect(a.objects.learn).toBe(42);
+  });
+
+  it("estimateNoise needs enough established beams", () => {
+    const g = createGrid(4, 200);
+    expect(estimateNoise(g)).toBeNull();
+    g.frames = 20;
+    g.nAvg.fill(10); g.temporal.fill(3); g.noiseVar.fill(0.025 ** 2);
+    const est = estimateNoise(g)!;
+    expect(est.noise).toBeCloseTo(0.025);
+    g.noiseVar.fill(1);
+    expect(estimateNoise(g)!.noise).toBe(0.08);         // clamped
+  });
+});
+
+describe("storage", () => {
+  it("survives a broken storage backend", () => {
+    const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("x"); } };
+    const s = new Store(broken);
+    expect(s.get("a")).toBeNull();
+    expect(() => s.set("a", "b")).not.toThrow();
+    expect(() => s.remove("a")).not.toThrow();
+  });
+  it("json helpers", () => {
+    const m = new Map<string, string>();
+    const s = new Store({ getItem: k => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: k => void m.delete(k) });
+    s.setJson("k", { a: 1 });
+    expect(s.json("k")).toEqual({ a: 1 });
+    s.set("bad", "{");
+    expect(s.json("bad")).toBeNull();
+  });
+});

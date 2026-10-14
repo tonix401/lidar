@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRS6000 Live View</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%234aa3ff%22/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="view"></div>
+<canvas id="view2d" hidden></canvas>
+<div id="tip" hidden></div>
+<div id="panel">
+  <h1 id="title">MRS6000</h1>
+  <div class="sub" id="subtitle">connecting…</div>
+
+  <h2>Stream</h2>
+  <div class="row"><span><span class="dot" id="streamDot"></span>Scan rate</span><span id="rate">–</span></div>
+  <div class="row"><span>Points / scan</span><span id="points">–</span></div>
+  <div class="row"><span>Layers × beams</span><span id="geom">–</span></div>
+  <div class="row"><span>Processing</span><span id="proc">–</span></div>
+  <div class="row"><span title="3D renders per second: on demand, so ≈ scan rate with a still camera">Renders / s</span><span id="fps">–</span></div>
+
+  <h2>Device</h2>
+  <div class="row"><span><span class="dot" id="devDot"></span>Status</span><span id="devStatus">–</span></div>
+  <div class="row"><span>System / APD temp</span><span id="temps">–</span></div>
+  <div class="row"><span>Supply</span><span id="volt">–</span></div>
+  <div class="row"><span>Mirror</span><span id="mirror">–</span></div>
+  <div class="row"><span>Window</span><span id="window">–</span></div>
+
+  <h2>Surface</h2>
+  <div class="row"><label for="draw">Draw</label>
+    <select id="draw">
+      <option value="surface">surface</option>
+      <option value="surface+points" selected>surface + points</option>
+      <option value="points">points</option>
+      <option value="lines">layer lines</option>
+      <option value="points+lines">points + lines</option>
+    </select></div>
+  <div class="row"><label for="mode">Mode</label>
+    <select id="mode"><option value="auto">auto (recommended)</option><option value="manual">manual</option></select></div>
+  <div id="autoInfo"></div>
+  <div class="row"><label for="preset">Smoothing preset</label>
+    <select id="preset">
+      <option value="off">off</option><option value="light">light</option>
+      <option value="medium">medium</option><option value="strong">strong</option>
+      <option value="custom" disabled>custom</option>
+    </select></div>
+  <div id="stages"></div>
+  <div class="btns" style="margin-top:8px"><button id="resetCfg">Reset to defaults</button></div>
+  <div class="row"><span>Removed</span><span id="removed" style="font-size:12px">–</span></div>
+  <div class="row"><span>Triangles</span><span id="tris">–</span></div>
+
+  <h2>Objects</h2>
+  <div class="checks">
+    <label title="Colour each tracked object; everything else is dimmed"><input type="checkbox" id="oHighlight" checked> highlight</label>
+    <label><input type="checkbox" id="oDim" checked> dim background</label>
+    <label><input type="checkbox" id="oBoxes" checked> boxes</label>
+    <label><input type="checkbox" id="oLabels" checked> labels</label>
+    <label><input type="checkbox" id="oTrails" checked> trails</label>
+    <label title="Keep the selected object centred (3D and 2D map)"><input type="checkbox" id="oFollow"> follow selected</label>
+  </div>
+  <div id="objInfo" class="note2"></div>
+  <div id="objList"></div>
+  <div id="objStage"></div>
+
+  <h2>Recording</h2>
+  <div class="row"><span id="srcLabel">live sensor</span><button id="recBtn" >● Record</button></div>
+  <div id="recInfo" class="note2"></div>
+  <div id="recList"></div>
+
+  <h2>Display</h2>
+  <div class="row"><label for="colorBy">Color by</label>
+    <select id="colorBy">
+      <option value="uniform">uniform (shaded)</option>
+      <option value="rssi">RSSI (intensity)</option>
+      <option value="dist" selected>Distance</option>
+      <option value="height">Height</option>
+      <option value="layer">Layer</option>
+      <option value="noise">Noise σ (history)</option>
+      <option value="conf">Confidence (history)</option>
+      <option value="area">Area class (adaptive)</option>
+    </select></div>
+  <div id="legendBox">
+    <div id="legend"></div>
+    <div class="legend-labels"><span id="legMin">–</span><span id="legMax">–</span></div>
+  </div>
+  <div class="row"><label for="layerSel">Layer</label><select id="layerSel"><option value="-1">all</option></select></div>
+  <div class="row"><label for="size">Point size</label><input id="size" type="range" min="0.5" max="6" step="0.5" value="1"></div>
+  <div class="row"><label for="range">Max range <span id="rangeVal"></span></label><input id="range" type="range" min="2" max="200" step="1" value="60"></div>
+  <div class="row"><label for="mount" title="Upright: sensor standing normally (negative elevation = down). Upside down: rotated 180° about the forward axis (up/down and left/right swap).">Mounting</label>
+    <select id="mount"><option value="upright">upright</option><option value="upsidedown">upside down</option></select></div>
+
+  <h2>View</h2>
+  <div class="btns" id="modeBtns">
+    <button data-mode="3d" class="on">3D</button><button data-mode="top">2D map</button><button data-mode="image">Range image</button>
+  </div>
+  <div class="btns" id="cam3d" style="margin-top:6px">
+    <button id="vPersp">Perspective</button><button id="vTop">Top</button><button id="vSide">Side</button><button id="vFront">Front</button>
+  </div>
+  <div class="btns" style="margin-top:6px"><button id="fit2d" hidden>Fit view</button><button id="pause">Pause</button></div>
+  <div id="err"></div>
+</div>
+<div id="labels"></div>
+<div id="transport" hidden>
+  <span id="tFile"></span>
+  <button id="tStepB" title="previous scan (←)">⏮</button><button id="tPlay" title="play / pause (space)">⏸</button><button id="tStepF" title="next scan (→)">⏭</button>
+  <input type="range" id="tSeek" min="0" max="0" value="0" step="1">
+  <span id="tTime">0:00 / 0:00</span>
+  <select id="tSpeed" title="playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+  <label title="start again at the end"><input type="checkbox" id="tLoop" checked> loop</label>
+  <button id="tLive" title="back to the live sensor">● Live</button>
+</div>
+<div id="hint">drag: rotate · right-drag: pan · wheel: zoom · space: pause</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
