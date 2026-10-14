@@ -49,6 +49,7 @@
   <div id="stages"></div>
   <div class="btns" style="margin-top:8px"><button id="resetCfg">Reset to defaults</button></div>
   <div class="row"><span>Removed</span><span id="removed" style="font-size:12px">–</span></div>
+  <div class="row"><span title="Moving areas (people): roughness = median deviation of a moving beam from its same-surface neighbours; flicker = share of moving beams that switched between object and background since the last scan. Lower is cleaner.">Moving areas</span><span id="movQuality" style="font-size:12px">–</span></div>
   <div class="row"><span>Triangles</span><span id="tris">–</span></div>
 
   <h2>Objects</h2>
@@ -80,6 +81,7 @@
       <option value="noise">Noise σ (history)</option>
       <option value="conf">Confidence (history)</option>
       <option value="area">Area class (adaptive)</option>
+      <option value="cell">Radial cell (experimental)</option>
     </select></div>
   <div id="legendBox">
     <div id="legend"></div>

@@ -70,7 +70,7 @@ frontend/
   index.html  src/styles.css  src/main.ts  src/app.ts (wiring)
   src/core/               types, math, colours, formatting
   src/config/             settings schema + presets (config.ts), auto mode, storage
-  src/pipeline/           one module per processing stage + Processor (order of stages)
+  src/pipeline/           one module per processing stage + Processor (order of stages), metrics.ts
   src/objects/            background, segmentation, Kalman, tracker, ObjectDetector
   src/render/             geometry (pure), scene3d (three.js), view2d (canvas)
   src/api/                typed API client, frame long-poll with retry
@@ -124,16 +124,50 @@ The scan is handled as an organized range image (layer × beam), in this order:
 4. **Outlier filter**: neighbour support within the layer, relaxed in moving areas.
 5. **Temporal smoothing**: Kalman-style per beam, with learned noise σ, change confirmation, and a second background mode for edges.
 6. **History filter**: drops flickering beams using the last 32 scans and adds confidence weights.
-7. **Bilateral filter**: the range σ adapts to each beam's noise.
+7. **Bilateral filter**: the range σ adapts to each beam's noise. Moving beams are left to the next stage.
+   - **Moving-area smoothing** (`dynsmooth.ts`): 3D smoothing within one scan for moving beams (people), which the per-beam stages pass through almost raw.
+     - Each moving point becomes the weighted mean of the 3D points within `radius` (auto: 3× noise floor, at least 4 cm).
+     - The weights are split into across the beam (σ = radius/2) and along it (σ = 2× the beam's range noise). The beams are far closer together (0.13°, about 7 mm at 3 m) than the range noise (about 30 mm), so one isotropic Gaussian mostly weighs noise; that version only got roughness from 18.6 to 15.4 mm.
+     - Only moving neighbours or ones in front of the empty-scene background count, so a person never blends into the wall.
+     - The mean is projected back onto the beam's own ray, so the grid stays organized.
+     - Mixed pixels are dropped: a beam on a depth jump of more than `gap` between its two opposite neighbours that matches neither side. At the outline of an arm the sensor merges arm and wall/torso into one in-between echo.
+   - **Radial cells** (`cells.ts`, experimental, off by default, see below).
 8. **Plane flattening**: PCA plane fit per point; the point moves along its ray when the patch is flat within about 2× the noise floor.
 9. **Organized mesh**: breaks at depth jumps.
 
 **Auto mode** (the default) derives all settings from the measured noise floor (the median σ of steady beams). The intensity filter and object detection always stay user-controlled. **Manual mode** keeps its own settings.
 
+**Moving-area metrics** (panel row "Moving areas", `Processor.stats`, `pipeline/metrics.ts`):
+- *rough*: median deviation of a moving beam from its same-surface 3×3 neighbours (mm).
+- *flicker*: share of moving beams that switched between object and background (the object detector's empty-scene model) since the last scan.
+
 Results on the recorded walk (Auto):
 - Wrong or missing moving beams fell from 73% to about 5.6%.
 - Static surfaces have about 3.2 mm noise.
 - Layer calibration reduces the plane residual from about 26 to 16 mm.
+
+### Moving people (2026-10-14)
+
+Measured headless over two recordings of a person close to the sensor (gesturing, walking), auto mode, after a 3 s warm-up. *Jitter* is the median scan-to-scan range change of beams that stay on the same moving surface.
+
+| Recording | Setting | Rough | Jitter | Flicker | Static noise | ms / scan |
+|---|---|---|---|---|---|---|
+| `rec_20261014_185611` (16 s) | before | 18.6 mm | 14.6 mm | 8.2 % | 3.0 mm | 16 |
+| | moving-area smoothing | 8.3 mm | 7.3 mm | 8.3 % | 3.0 mm | 23 |
+| | + radial cells | 8.3 mm | 7.3 mm | 8.3 % | 3.0 mm | 25 |
+| `rec_20261014_223527` (39 s) | before | 14.4 mm | 19.1 mm | 10.9 % | 2.7 mm | 17 |
+| | moving-area smoothing | 5.2 mm | 12.5 mm | 10.9 % | 2.7 mm | 23 |
+| | + radial cells | 5.2 mm | 12.3 mm | 10.8 % | 2.7 mm | 23 |
+
+The share of moving beams is unchanged by both stages (motion detection runs before them).
+
+**Radial cells: what was tried.** Columns of 4 × 2 beams radiating from the sensor, each with up to 4 depth slots (α-β filtered range, OctoMap-style log-odds occupancy with hysteresis).
+- *Temporal range correction* (shift a slot's beams by filtered − measured range): jitter got **worse**, 7.3 → 9.9 mm (window 10: 10.5 mm; correcting only steady slots: 8.3 mm). A column mixes surfaces (arm and torso), so its median jumps whenever the mix changes, and the filter turns that into per-column offsets. Removed.
+- *Occupancy gate* (drop beams of slots with fewer than `confirm` hits): flicker 8.3 → 6.6 %, but only by erasing the tips of fast-moving arms and hands as they enter new columns. Now a new slot next to a confirmed one at a similar range is confirmed at once; then the gate touches about 1.5 beams per scan and is neutral.
+- *Dropout fill*: no effect; temporal smoothing already holds a beam through short dropouts.
+- The stage stays as an experiment (user-controlled, off by default, colour by "Radial cell" to see the columns).
+
+**Not done yet: the echo test.** The device runs on the last echo. Record the same walk with `mrs6000 echo-filter first` and with `last` (no `--save`; restore afterwards) and compare *flicker* and the outline. Streaming several echoes (`cola.py` parses them, `stream.py` and `frames.py` only send `echoes[0]`) is only worth it if the difference is large.
 
 **Views:**
 - 3D, with Perspective / Top / level Side / Front cameras and the FOV fan.
@@ -243,7 +277,7 @@ Nothing crashes on a sensor or network problem; everything retries on its own.
 - **Environment:** plain Python venv in `backend/.venv` and npm in `frontend/`, nothing system-specific. `shell.nix` is only a convenience for NixOS. There, Playwright's downloaded Chromium does not run, so the system `chromium` is used.
 - **Tests:** `make test` runs everything.
   - **Backend:** about 55 pytest tests. They use fake sensors, so no hardware is needed.
-  - **Frontend:** about 55 vitest tests on synthetic ray-cast scenes, plus jsdom tests for the panel.
+  - **Frontend:** about 65 vitest tests on synthetic ray-cast scenes, plus jsdom tests for the panel.
   - **End to end:** a browser test with Playwright and Chrome or Chromium (see Setup). Its screenshots go to `frontend/e2e/artifacts/`.
 - **Debugging:** in the browser console, `window.mrs6000` is the app: `processor` holds the grid and objects, `cfg` the settings, `geo` the geometry.
 - **Browser storage keys:**

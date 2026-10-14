@@ -54,7 +54,7 @@ export class StageControls {
     }
   }
 
-  /** show cfg; in auto mode everything except the user stages is read-only */
+  /** show cfg; in auto mode everything except the user stages is hidden (auto sets it) */
   sync(cfg: Config, auto: boolean, stages: Stage[] = STAGES): void {
     for (const s of stages) {
       const c = cfg[s.key] as Record<string, number | boolean>;
@@ -65,8 +65,8 @@ export class StageControls {
         this.inputs.get(`${s.key}.${p.k}`)!.value = String(c[p.k]);
         this.labels.get(`${s.key}.${p.k}`)!.textContent = fmtParam(p, c[p.k] as number);
       }
-      const locked = auto && !USER_STAGES.has(s.key);
-      this.sections.get(s.key)?.querySelectorAll("input").forEach(i => { i.disabled = locked; });
+      const sec = this.sections.get(s.key);
+      if (sec) sec.hidden = auto && !USER_STAGES.has(s.key);
     }
   }
 

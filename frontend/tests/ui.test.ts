@@ -26,7 +26,7 @@ describe("index.html", () => {
 });
 
 describe("stage controls", () => {
-  it("generates a control per parameter, puts objects in their section, locks in auto", () => {
+  it("generates a control per parameter, puts objects in their section, hides auto stages in auto", () => {
     const change = vi.fn();
     const sc = new StageControls({ default: $("stages"), objects: $("objStage") }, { change, resetCalibration: vi.fn(), extraOpened: vi.fn() });
     const n = STAGES.reduce((s, st) => s + st.params.length + (st.toggle ? 1 : 0), 0);
@@ -34,8 +34,12 @@ describe("stage controls", () => {
     expect($("objStage").querySelector('[data-key="objects"]')).not.toBeNull();
     const cfg = defaultConfig();
     sc.sync(cfg, true);
-    expect(($("cfg-temporal-window") as HTMLInputElement).disabled).toBe(true);
-    expect(($("cfg-objects-learn") as HTMLInputElement).disabled).toBe(false);   // user stage
+    const section = (key: string) => document.querySelector<HTMLElement>(`[data-key="${key}"]`)!;
+    expect(section("temporal").hidden).toBe(true);
+    expect(section("objects").hidden).toBe(false);              // user stages
+    expect(section("intensity").hidden).toBe(false);
+    sc.sync(cfg, false);
+    expect(section("temporal").hidden).toBe(false);
     expect($("cfg-objects-learn-val").textContent).toBe("20 s");
     const inp = $("cfg-objects-gate") as HTMLInputElement;
     inp.value = "1.2"; inp.dispatchEvent(new Event("input"));

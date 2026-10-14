@@ -16,6 +16,7 @@ h1 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
 .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
   margin: 14px 0 6px; font-weight: 600; }
+[hidden] { display: none !important; }          /* also for elements with their own display */
 .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; }
 .row span:last-child { font-variant-numeric: tabular-nums; }
 label { color: var(--muted); }

@@ -9,6 +9,8 @@ export interface Config {
   temporal: { on: boolean; window: number; k: number; minGate: number; confirm: number; noiseFloor: number; hold: number };
   history: { on: boolean; minValid: number; maxJump: number; weight: number };
   spatial: { on: boolean; wb: number; wl: number; srAbs: number; srRel: number; srNoise: number };
+  dynamic: { on: boolean; radius: number; minPts: number; gap: number };
+  cells: { on: boolean; colBeams: number; colLayers: number; window: number; k: number; confirm: number; hold: number };
   planes: { on: boolean; wb: number; wl: number; planarity: number; minPts: number; minCos: number; tolAbs: number; tolRel: number; noiseFlat: number };
   mesh: { jump: number; jumpRel: number };
   objects: { on: boolean; scope: number; learn: number; minDiff: number; theta: number; margin: number; minPoints: number; mergeDist: number; gate: number; coast: number };
@@ -93,6 +95,28 @@ export const STAGES: Stage[] = [
       { k: "srAbs", label: "Edge sensitivity σ", min: 0.01, max: 0.3, step: 0.005, unit: " m" },
       { k: "srRel", label: "σ growth", min: 0, max: 0.05, step: 0.001, pct: true },
       { k: "srNoise", label: "σ from beam noise", min: 0, max: 5, step: 0.5, fmt: v => v ? `≥ ${v}× beam σ` : "off" } ] },
+  { key: "dynamic", title: "Moving-area smoothing", toggle: true, note: "Needs 'Adaptive per area'; replaces its 'Spatial window in moving areas'.",
+    help: "3D smoothing within one scan for moving areas (people), which the other stages pass through almost raw: " +
+          "each moving point becomes the weighted mean of the 3D points within the radius around it (moving or in front " +
+          "of the empty scene only, never the wall behind), moved back onto its own beam. Points hanging between a " +
+          "person and the wall behind (mixed pixels at the outline) are dropped.",
+    params: [
+      { k: "radius", label: "Radius", min: 0.02, max: 0.3, step: 0.01, unit: " m" },
+      { k: "minPts", label: "Min. points", min: 1, max: 30, step: 1 },
+      { k: "gap", label: "Drop mixed pixels behind by", min: 0.1, max: 1, step: 0.05, unit: " m" } ] },
+  { key: "cells", title: "Radial cells (experimental)", toggle: true, preset: false,
+    note: "Off by default: no measurable gain on the recorded scenes (see README). Needs 'Adaptive per area'. Applies to new scans.",
+    help: "Occupancy for moving areas that follows a wedge of space instead of a single beam: the range image is cut " +
+          "into columns radiating from the sensor, each holding a few depth slots that follow what is in them. A slot " +
+          "needs a few hits before it is shown (isolated new returns are dropped; ones touching a confirmed slot are " +
+          "shown at once) and fills short dropouts. Colour by 'Radial cell' to see the columns.",
+    params: [
+      { k: "colBeams", label: "Column width", min: 1, max: 16, step: 1, unit: " beams" },
+      { k: "colLayers", label: "Column height", min: 1, max: 6, step: 1, unit: " layers" },
+      { k: "window", label: "Max. averaging", min: 1, max: 30, step: 1, unit: " scans" },
+      { k: "k", label: "Follow beyond", min: 1, max: 8, step: 0.5, fmt: v => v.toFixed(1) + " σ" },
+      { k: "confirm", label: "Show after", min: 1, max: 5, step: 1, unit: " hits" },
+      { k: "hold", label: "Fill dropouts for", min: 0, max: 10, step: 1, unit: " scans" } ] },
   { key: "planes", title: "Flatten planes", toggle: true,
     help: "Fits a plane around each point (PCA) and moves the point along its beam onto it.",
     params: [
@@ -127,30 +151,33 @@ export const STAGES: Stage[] = [
 ];
 
 export const PRESET_KEYS = STAGES.filter(s => s.preset !== false).map(s => s.key);
-/** stages that stay user-controlled in auto mode (content choices, not quality tuning) */
-export const USER_STAGES: ReadonlySet<StageKey> = new Set<StageKey>(["intensity", "objects"]);
+/** stages that stay user-controlled in auto mode (content choices and experiments, not quality tuning) */
+export const USER_STAGES: ReadonlySet<StageKey> = new Set<StageKey>(["intensity", "objects", "cells"]);
 
 export const DEFAULT_INTENSITY: Config["intensity"] = { on: false, min: 0, max: 400 };
 export const DEFAULT_LAYERCAL: Config["layercal"] = { on: true, rate: 0.3 };
 export const DEFAULT_ADAPTIVE: Config["adaptive"] = { on: true, minCluster: 8, growBeams: 12, hold: 10, dynWindow: 1, dynSpatial: 1 };   // tuned on a recorded walk
+export const DEFAULT_CELLS: Config["cells"] = { on: false, colBeams: 4, colLayers: 2, window: 5, k: 3, confirm: 2, hold: 2 };
 export const DEFAULT_OBJECTS: Config["objects"] = { on: true, scope: 0, learn: 20, minDiff: 0.15, theta: 10, margin: 0.08, minPoints: 8, mergeDist: 0.3, gate: 0.8, coast: 10 };
 
-type PresetPart = Pick<Config, "outlier" | "temporal" | "history" | "spatial" | "planes" | "mesh">;
+type PresetPart = Pick<Config, "outlier" | "temporal" | "history" | "spatial" | "dynamic" | "planes" | "mesh">;
 const MEDIUM: PresetPart = {
   outlier: { on: true, win: 2, need: 1, abs: 0.15, rel: 0.03 },
   temporal: { on: true, window: 10, k: 3, minGate: 0.1, confirm: 2, noiseFloor: 0.02, hold: 2 },
   history: { on: true, minValid: 0.5, maxJump: 0.4, weight: 1 },
   spatial: { on: true, wb: 3, wl: 0, srAbs: 0.05, srRel: 0.01, srNoise: 0 },
+  dynamic: { on: true, radius: 0.08, minPts: 4, gap: 0.3 },
   planes: { on: true, wb: 4, wl: 1, planarity: 0.02, minPts: 8, minCos: 0.15, tolAbs: 0.2, tolRel: 0.03, noiseFlat: 0 },
   mesh: { jump: 0.5, jumpRel: 0.02 },
 };
 function variant(edit: (p: PresetPart) => void): PresetPart { const p = structuredClone(MEDIUM); edit(p); return p; }
 export const PRESETS: Record<"off" | "light" | "medium" | "strong", PresetPart> = {
-  off: variant(p => { for (const k of ["outlier", "temporal", "history", "spatial", "planes"] as const) p[k].on = false; }),
+  off: variant(p => { for (const k of ["outlier", "temporal", "history", "spatial", "dynamic", "planes"] as const) p[k].on = false; }),
   light: variant(p => {
     Object.assign(p.temporal, { window: 4, confirm: 1 });
     Object.assign(p.history, { minValid: 0.3, maxJump: 0.6, weight: 0.5 });
     Object.assign(p.spatial, { wb: 2 });
+    Object.assign(p.dynamic, { radius: 0.05 });
     Object.assign(p.planes, { wb: 3, planarity: 0.01 });
   }),
   medium: structuredClone(MEDIUM),
@@ -159,6 +186,7 @@ export const PRESETS: Record<"off" | "light" | "medium" | "strong", PresetPart> 
     Object.assign(p.temporal, { window: 30, confirm: 3 });
     Object.assign(p.history, { minValid: 0.7, maxJump: 0.25, weight: 2 });
     Object.assign(p.spatial, { wb: 6, wl: 1 });
+    Object.assign(p.dynamic, { radius: 0.12 });
     Object.assign(p.planes, { wb: 7, planarity: 0.06 });
   }),
 };
@@ -166,7 +194,7 @@ export type PresetName = keyof typeof PRESETS;
 
 export function defaultConfig(): Config {
   return { ...structuredClone(PRESETS.medium), intensity: { ...DEFAULT_INTENSITY }, layercal: { ...DEFAULT_LAYERCAL },
-           adaptive: { ...DEFAULT_ADAPTIVE }, objects: { ...DEFAULT_OBJECTS } };
+           adaptive: { ...DEFAULT_ADAPTIVE }, objects: { ...DEFAULT_OBJECTS }, cells: { ...DEFAULT_CELLS } };
 }
 
 /** cfg with a preset applied (filters, calibration, adaptivity and objects untouched) */

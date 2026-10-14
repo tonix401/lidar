@@ -16,6 +16,7 @@ export function autoConfig(base: Config, noise: number): Config {
     temporal: { on: true, window: 20, k: 3, minGate: Math.max(0.06, 2.5 * nf), confirm: 2, noiseFloor: nf, hold: 2 },
     history: { on: true, minValid: 0.5, maxJump: 0.3, weight: 1 },
     spatial: { on: true, wb: 3, wl: 0, srAbs: 1.5 * nf, srRel: 0.005, srNoise: 2 },
+    dynamic: { on: true, radius: Math.max(0.04, 3 * nf), minPts: 4, gap: 0.3 },
     planes: { on: true, wb: 5, wl: 1, planarity: 0.02, minPts: 12, minCos: 0.2, tolAbs: Math.max(0.1, 5 * nf), tolRel: 0.02, noiseFlat: 2 },
     mesh: { jump: 0.3, jumpRel: 0.03 },
     adaptive: { ...DEFAULT_ADAPTIVE },

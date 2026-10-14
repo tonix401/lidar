@@ -153,11 +153,12 @@ export class App {
     this.stages.sync(this.cfg, auto);
     $<HTMLSelectElement>("mode").value = this.mode;
     const preset = $<HTMLSelectElement>("preset");
-    preset.value = matchingPreset(this.cfg); preset.disabled = auto;
+    preset.value = matchingPreset(this.cfg);
+    preset.closest(".row")!.toggleAttribute("hidden", auto);
     $("resetCfg").hidden = auto;
     $("autoInfo").textContent = auto ? "Auto: " + (this.autoText || "learning the scene…") +
-      ". Settings below are chosen from the measured noise and motion and update every second; switch to manual to edit " +
-      "(intensity filter and object detection stay editable)." : "";
+      ". The filter settings are chosen from the measured noise and motion and update every second; switch to manual " +
+      "to see and edit them (intensity filter, radial cells and object detection stay here)." : "";
     this.drawCharts();
   }
 
@@ -333,6 +334,7 @@ export class App {
     buildGeometry(g, g.out, this.geo, {
       colorBy: this.ui.colorBy, layer: this.ui.layer, maxRange: this.ui.maxRange, jump: this.cfg.mesh.jump, jumpRel: this.cfg.mesh.jumpRel,
       tint: highlight && objects ? (i, rgb) => objects.tint(i, rgb, tintOpts) : undefined,
+      cells: this.processor.cells?.assign,
     });
     this.scene.update(this.geo);
     if (this.selected && !objects?.tracker.byId(this.selected)) this.selected = 0;
@@ -348,18 +350,22 @@ export class App {
 
   private panelStats(): void {
     const st = this.processor.stats, geo = this.geo!;
-    const parts = ([["intensity", this.cfg.intensity.on, st.intensity], ["outliers", this.cfg.outlier.on, st.outliers], ["flicker", this.cfg.history.on, st.flicker]] as const)
+    const parts = ([["intensity", this.cfg.intensity.on, st.intensity], ["outliers", this.cfg.outlier.on, st.outliers], ["flicker", this.cfg.history.on, st.flicker], ["mixed pixels", this.cfg.dynamic.on, st.veils], ["spikes", this.cfg.cells.on, st.spikes]] as const)
       .filter(([, on]) => on).map(([k, , n]) => `${n} ${k}`);
     $("removed").textContent = parts.length ? parts.join(" · ") : "–";
+    $("movQuality").textContent = isNaN(st.movRough) ? "–" :
+      `rough ${st.movRough.toFixed(1)} mm` + (isNaN(st.movFlicker) ? "" : ` · flicker ${(st.movFlicker * 100).toFixed(0)} %`);
     $("tris").textContent = geo.nt.toLocaleString();
     $("proc").textContent = (st.ingestMs + st.refineMs).toFixed(0) + " ms";
-    const isArea = this.ui.colorBy === "area";
-    $("legend").style.visibility = isArea ? "hidden" : "";
+    const isArea = this.ui.colorBy === "area", isCell = this.ui.colorBy === "cell";
+    $("legend").style.visibility = isArea || isCell ? "hidden" : "";
     if (isArea) {
       const [f, d, m] = geo.areaCounts;
       $("legMin").textContent = `flat ${f} · detail ${d}`; $("legMax").textContent = `moving ${m}`;
+    } else if (isCell) {
+      $("legMin").textContent = this.cfg.cells.on ? "one colour per depth slot" : "radial cells are off"; $("legMax").textContent = "grey: none";
     } else {
-      const unit = { rssi: "", dist: " m", height: " m", layer: "", uniform: "", noise: " mm", conf: "", area: "" }[this.ui.colorBy];
+      const unit = { rssi: "", dist: " m", height: " m", layer: "", uniform: "", noise: " mm", conf: "", area: "", cell: "" }[this.ui.colorBy];
       const fmt = (v: number) => this.ui.colorBy === "dist" || this.ui.colorBy === "height" ? v.toFixed(1) : this.ui.colorBy === "conf" ? v.toFixed(2) : String(Math.round(v));
       $("legMin").textContent = fmt(geo.lo) + unit; $("legMax").textContent = fmt(geo.hi) + unit;
     }
