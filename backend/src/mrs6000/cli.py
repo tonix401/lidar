@@ -7,6 +7,8 @@
   mrs6000 scan [-n 10] [--csv out.csv] [--source ws]
   mrs6000 record [prefix] [--mount auto|upright|upside-down]
   mrs6000 echo-filter [first|all|last] [--save] [--env .env]
+  mrs6000 compress recordings/*.tpc              # x.tpc -> x.tpc.zstd (keeps x.tpc)
+  mrs6000 decompress rec.tpc.zstd [-o out.tpc]   # same result as zstd -d
 """
 from __future__ import annotations
 
@@ -21,6 +23,7 @@ from .env import load_env
 from .errors import describe_error
 from .export import write_scan_files
 from .rest import RestClient, RestError
+from .server.stream import convert
 from .variables import DEFAULT_IP, DEVICE_STATUS, VARIABLES
 
 
@@ -141,8 +144,21 @@ def cmd_echo_filter(_rest, args):
               " (not saved: reverts on power cycle, use --save)"))
 
 
+def cmd_convert(_rest, args):
+    compress = args.cmd == "compress"
+    src_suffix = ".tpc" if compress else ".tpc.zstd"
+    if args.output and len(args.files) > 1:
+        raise ValueError("--output needs a single input file")
+    for src in args.files:
+        if not src.endswith(src_suffix):
+            raise ValueError(f"{src}: expected a {src_suffix} file")
+        dst = args.output or (src + ".zstd" if compress else src.removesuffix(".zstd"))
+        size = convert(src, dst, compress=compress)
+        print(f"{dst}: {size / 1e6:.1f} MB")
+
+
 COMMANDS = {"info": cmd_info, "status": cmd_status, "get": cmd_get, "dump": cmd_dump, "scan": cmd_scan,
-            "record": cmd_record, "echo-filter": cmd_echo_filter}
+            "record": cmd_record, "echo-filter": cmd_echo_filter, "compress": cmd_convert, "decompress": cmd_convert}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -163,6 +179,10 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("-n", "--count", type=int, default=1)
     r.add_argument("--mount", choices=("auto", "upright", "upside-down"), default="auto",
                    help="sensor mounting for x/y/z (auto: read the device's UpsideDown parameter)")
+    for name, what in (("compress", "x.tpc -> x.tpc.zstd"), ("decompress", "x.tpc.zstd -> x.tpc")):
+        c = sub.add_parser(name, help=f"recordings {what} (keeps the input)")
+        c.add_argument("files", nargs="+")
+        c.add_argument("-o", "--output", help="output file (one input only)")
     s = sub.add_parser("scan", help="receive point clouds")
     s.add_argument("--source", choices=("cola", "ws"), default="cola",
                    help="cola: TCP 2111, full rate (default); ws: web UI preview stream")

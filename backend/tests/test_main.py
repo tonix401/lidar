@@ -9,7 +9,7 @@ from tests.test_stream import write_recording
 
 
 def test_server_starts_offline_with_a_replay_and_serves_the_api(tmp_path):
-    rec = write_recording(tmp_path / "r.mrsstream", n=10)
+    rec = write_recording(tmp_path / "r.tpc", n=10)
     port = free_port()
     p = subprocess.Popen([sys.executable, "-m", "mrs6000.server", "--offline", "--port", str(port),
                           "--recordings", str(tmp_path), "--replay", str(rec)],
@@ -25,7 +25,7 @@ def test_server_starts_offline_with_a_replay_and_serves_the_api(tmp_path):
     finally:
         p.terminate()
         out = p.communicate(timeout=5)[0]
-    assert "replaying r.mrsstream" in out and "Traceback" not in out
+    assert "replaying r.tpc" in out and "Traceback" not in out
 
 
 def test_port_in_use_exits_with_a_short_message(tmp_path):

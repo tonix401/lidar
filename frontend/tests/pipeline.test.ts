@@ -14,7 +14,8 @@ import { flattenPlanes } from "../src/pipeline/planes";
 import { Processor } from "../src/pipeline/processor";
 import { updateRays } from "../src/pipeline/rays";
 import { temporalUpdate } from "../src/pipeline/temporal";
-import { updateWall, wallFill } from "../src/pipeline/wall";
+import { dropMixed, frontMask, snapToWall } from "../src/pipeline/outline";
+import { DROPPED, FRONT, updateWall, WALL_CONFIRM, WALL_N, wallFill } from "../src/pipeline/wall";
 import { castRanges, elevations, frameData, meta, type Cylinder } from "./helpers/scene";
 
 function gridFor(o = {}) {
@@ -296,6 +297,108 @@ describe("remembered walls", () => {
     expect(g.wall[i]).toBeCloseTo(withPerson[i], 5);
     updateWall(g, new Float32Array(g.N), wall, cfg);           // background learned the wall behind
     expect(g.wall[i]).toBeCloseTo(wall[i], 5);
+  });
+});
+
+describe("clean outlines", () => {
+  const o = { floorZ: -50 }, person = { x: 3, y: 0, r: 0.25, z0: -1, z1: 1 };
+  const flag = (g: ReturnType<typeof gridFor>, D: Float32Array, bg: Float32Array) => {
+    g.motionHold.fill(0);
+    for (let i = 0; i < g.N; i++) if (D[i] > 0 && D[i] < bg[i] - 0.3) g.motionHold[i] = 5;
+  };
+  function setup() {
+    const g = gridFor(o), cfg = defaultConfig(), wall = castRanges(o), withPerson = castRanges({ ...o, objects: [person] });
+    for (let k = 0; k < WALL_N; k++) updateWall(g, wall, wall, cfg);   // the empty wall, seen for a while
+    return { g, cfg, wall, withPerson };
+  }
+
+  it("a moving beam that sees its remembered wall is drawn as it, and refines a young memory", () => {
+    const { g, cfg, wall } = setup(), noisy = castRanges({ ...o, noise: 0.02, seed: 4 });
+    g.motionHold.fill(5);
+    const out = noisy.slice();
+    const valid = wall.filter(w => w > 0).length;
+    expect(snapToWall(g, out, cfg, false)).toBeGreaterThan(valid * 0.99);    // all but > 3σ noise
+    for (let i = 0; i < g.N; i++) if (out[i] !== noisy[i]) expect(out[i]).toBe(g.wall[i]);
+    g.wall.set(noisy); g.wallN.fill(1);                         // a memory from one raw reading
+    for (let k = 0; k < 15; k++) snapToWall(g, castRanges({ ...o, noise: 0.02, seed: 10 + k }), cfg, true);
+    expect(rms(g.wall, wall)).toBeLessThan(rms(noisy, wall) / 2.5);
+  });
+
+  it("static outputs are averaged into the memory, a new surface replaces it", () => {
+    const { g, cfg, wall } = setup();
+    g.wall.set(castRanges({ ...o, noise: 0.02, seed: 2 })); g.wallN.fill(1);
+    for (let k = 0; k < WALL_N; k++) updateWall(g, castRanges({ ...o, noise: 0.005, seed: 30 + k }), wall, cfg);
+    expect(rms(g.wall, wall)).toBeLessThan(0.006);
+    const moved = castRanges({ ...o, wallX: 5.5 });             // the wall moved back 0.5 m (a door opened)
+    updateWall(g, moved, moved, cfg);
+    expect(rms(g.wall, moved)).toBeLessThan(1e-6);
+  });
+
+  it("drops mixed pixels at the outline and marks the object for the mesh cut", () => {
+    const { g, cfg, wall, withPerson } = setup(), D = withPerson.slice(), l = 12, B = g.B;
+    let edge = -1;                                              // last person beam of layer l
+    for (let b = 1; b < B - 1; b++) { const i = l * B + b; if (D[i] < wall[i] - 0.5 && D[i + 1] > wall[i + 1] - 0.1) edge = i; }
+    D[edge + 1] = (D[edge] + wall[edge + 1]) / 2;               // halfway between the person and the wall
+    expect(frontMask(g, D, wall, cfg, g.front)).toBeGreaterThan(50);
+    expect(g.front[edge]).toBe(1);
+    expect(g.front[edge + 1]).toBe(1);
+    expect(dropMixed(g, D, g.front, cfg)).toBeGreaterThanOrEqual(1);
+    expect(D[edge + 1]).toBe(0);
+    expect(g.front[edge + 1]).toBe(DROPPED);
+    flag(g, withPerson, wall);
+    expect(wallFill(g, D, wall, cfg, g.fill)).toBeGreaterThan(0);
+    expect(g.fill[edge + 1]).toBeCloseTo(wall[edge + 1], 2);   // the wall is drawn behind the dropped pixel
+    const kept = Array.from({ length: g.N }, (_, i) => i).filter(i => withPerson[i] < wall[i] - 0.5 && D[i] > 0).length;
+    const person = Array.from({ length: g.N }, (_, i) => i).filter(i => withPerson[i] < wall[i] - 0.5).length;
+    expect(kept / person).toBeGreaterThan(0.95);                // the body itself stays
+  });
+});
+
+describe("clean outlines: close to the wall", () => {
+  const o = { floorZ: -50 };
+  function setup() {
+    const g = gridFor(o), cfg = defaultConfig(), wall = castRanges(o);
+    for (let k = 0; k < WALL_N; k++) updateWall(g, wall, wall, cfg);
+    return { g, cfg, wall };
+  }
+  const patch = (g: ReturnType<typeof gridFor>, l0: number, b0: number, n: number) =>
+    Array.from({ length: n * n }, (_, k) => (l0 + ((k / n) | 0)) * g.B + b0 + (k % n));
+
+  it("a moving patch just in front of the wall (feet on the floor) counts as in front, a lone noisy beam not", () => {
+    const { g, cfg, wall } = setup(), D = wall.slice(), feet = patch(g, 5, 80, 3), lone = 12 * g.B + 140;
+    for (const i of [...feet, lone]) { D[i] = wall[i] - 0.18; g.motionHold[i] = 5; }   // inside the detector's tolerance
+    frontMask(g, D, wall, cfg, g.front);
+    for (const i of feet) expect(g.front[i]).toBe(FRONT);
+    expect(g.front[lone]).toBe(0);
+    g.motionHold.fill(0);
+    frontMask(g, D, wall, cfg, g.front);
+    expect(g.front[feet[4]]).toBe(0);                           // not moving: that is just the wall's shape
+  });
+
+  it("a wall beam pulled towards the object next to it is put back onto the wall", () => {
+    const { g, cfg, wall } = setup(), D = wall.slice(), body = patch(g, 10, 80, 4), next = 11 * g.B + 84;
+    for (const i of body) { D[i] = 3; g.motionHold[i] = 5; }
+    D[next] = wall[next] - 0.15;                               // within the foreground tolerance, but 15 cm off its wall
+    frontMask(g, D, wall, cfg, g.front);
+    expect(g.front[next]).toBe(0);
+    dropMixed(g, D, g.front, cfg);
+    expect(D[next]).toBe(g.wall[next]);
+  });
+
+  it("a remembered wall changes only after a new surface stayed for a while", () => {
+    const { g, cfg, wall } = setup(), moved = castRanges({ ...o, wallX: 5.4 });
+    for (let k = 1; k < WALL_CONFIRM; k++) { updateWall(g, moved, null, cfg); expect(rms(g.wall, wall)).toBeLessThan(1e-6); }
+    updateWall(g, moved, null, cfg);
+    expect(rms(g.wall, moved)).toBeLessThan(1e-6);
+  });
+
+  it("a remembered value that sticks out from its neighbours is drawn as their median", () => {
+    const { g, cfg, wall } = setup(), i = 12 * g.B + 90, D = wall.slice();
+    g.wall[i] = wall[i] - 0.3;                                 // remembered a mixed pixel
+    D[i] = 2; g.motionHold[i] = 5;                              // something in front of it now
+    frontMask(g, D, wall, cfg, g.front);
+    wallFill(g, D, wall, cfg, g.fill);
+    expect(Math.abs(g.fill[i] - wall[i])).toBeLessThan(0.01);
   });
 });
 

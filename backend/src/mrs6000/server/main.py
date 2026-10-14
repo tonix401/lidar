@@ -1,8 +1,8 @@
 """Viewer backend entry point.
 
   mrs6000-viewer                                   # live sensor → http://localhost:8000
-  mrs6000-viewer --replay recordings/walk.mrsstream
-  mrs6000-viewer --offline --replay x.mrsstream    # no sensor connection at all (tests, demos)
+  mrs6000-viewer --replay recordings/walk.tpc
+  mrs6000-viewer --offline --replay x.tpc    # no sensor connection at all (tests, demos)
 """
 from __future__ import annotations
 
@@ -32,10 +32,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--ip", default=DEFAULT_IP, help="sensor address")
     ap.add_argument("--host", default="127.0.0.1", help="bind address (0.0.0.0 to share on the LAN)")
     ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--recordings", type=Path, default=DEFAULT_REC_DIR, help="folder for .mrsstream recordings")
+    ap.add_argument("--recordings", type=Path, default=DEFAULT_REC_DIR, help="folder for .tpc / .tpc.zstd recordings")
     ap.add_argument("--frontend", type=Path, default=DEFAULT_FRONTEND, help="built frontend to serve at /")
     ap.add_argument("--record", metavar="FILE", help="start recording the live stream to FILE right away")
-    ap.add_argument("--replay", metavar="FILE", help="start by playing a .mrsstream recording")
+    ap.add_argument("--replay", metavar="FILE", help="start by playing a .tpc or .tpc.zstd recording")
     ap.add_argument("--offline", action="store_true", help="never connect to the sensor (replay only)")
     return ap
 

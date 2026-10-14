@@ -1,7 +1,8 @@
 // The processing pipeline for one organized scan, in order:
 //  1 intensity filter → 2 layer calibration → 3 motion detection (unfiltered) → 4 outlier rejection
 //  → 5 temporal model → objects (per-scan ranges) → [refine] 6 history filter → 7 bilateral
-//  → 7b moving-area smoothing → 7c radial cells → 8 planes → walls remembered behind moving objects.
+//  → 7b moving-area smoothing → 7c radial cells → 8 planes → 9 clean outlines → walls remembered behind
+//  moving objects.
 // (Radial cells and the wall memory are updated in ingest.)
 // ingest() runs the per-scan stages; refine() re-runs the spatial stages (also after settings changes).
 import type { Config } from "../config/config";
@@ -17,13 +18,14 @@ import { applyLayerBias, removeUnobservable, updateLayerBias } from "./layercal"
 import { FlickerMeter, movingRoughness } from "./metrics";
 import { detectMotion } from "./motion";
 import { rejectOutliers } from "./outlier";
+import { dropMixed, frontMask, snapToWall } from "./outline";
 import { flattenPlanes } from "./planes";
 import { updateRays } from "./rays";
 import { temporalUpdate } from "./temporal";
 import { updateWall, wallFill } from "./wall";
 
 export interface FrameStats {
-  intensity: number; outliers: number; flicker: number; veils: number; spikes: number; wallFill: number; ingestMs: number; refineMs: number;
+  intensity: number; outliers: number; flicker: number; veils: number; spikes: number; mixed: number; wallFill: number; ingestMs: number; refineMs: number;
   movRough: number; movFlicker: number;        // moving areas: roughness (mm), foreground flips per scan (0..1)
 }
 
@@ -36,7 +38,7 @@ export class Processor {
   cells: Cells | null = null;
   layerBias = new Float32Array(24);
   rssiHist: Uint32Array<ArrayBufferLike> = new Uint32Array(50);
-  stats: FrameStats = { intensity: 0, outliers: 0, flicker: 0, veils: 0, spikes: 0, wallFill: 0, ingestMs: 0, refineMs: 0, movRough: NaN, movFlicker: NaN };
+  stats: FrameStats = { intensity: 0, outliers: 0, flicker: 0, veils: 0, spikes: 0, mixed: 0, wallFill: 0, ingestMs: 0, refineMs: 0, movRough: NaN, movFlicker: NaN };
   /** called after a layer-calibration update (e.g. to persist the offsets) */
   onLayerBias: ((bias: Float32Array) => void) | null = null;
   private scans = 0;
@@ -79,14 +81,14 @@ export class Processor {
       this.cells.update(g, g.raw, ts, cfg);
     }
     this.stats = { ...this.stats, intensity, outliers, ingestMs: performance.now() - t0 };
-    this.refine();
+    this.refine(true);
     updateWall(g, g.out, this.background(), cfg);
     this.stats.movFlicker = this.flickerMeter!.update(g, g.out, this.objects!.bgModel, cfg);
     return g;
   }
 
-  /** spatial stages on the current temporal state → grid.out */
-  refine(): void {
+  /** spatial stages on the current temporal state → grid.out; `scan` = once per new scan (learning steps) */
+  refine(scan = false): void {
     const g = this.grid;
     if (!g) return;
     const t0 = performance.now();
@@ -95,7 +97,14 @@ export class Processor {
     this.stats.veils = dynSmooth(g, g.hist, g.work, this.background(), this.meta?.step_deg ?? 0.13, this.cfg);
     this.stats.spikes = this.cells && this.cfg.cells.on ? this.cells.apply(g, g.raw, g.work, this.cfg) : 0;
     flattenPlanes(g, g.work, g.out, this.cfg);
-    this.stats.wallFill = wallFill(g, g.out, this.background(), this.cfg, g.fill);
+    const bg = this.background();
+    this.stats.mixed = 0;
+    if (this.cfg.outline.on) {
+      snapToWall(g, g.out, this.cfg, scan);
+      frontMask(g, g.out, bg, this.cfg, g.front);
+      this.stats.mixed = dropMixed(g, g.out, g.front, this.cfg);
+    } else g.front.fill(0);
+    this.stats.wallFill = wallFill(g, g.out, bg, this.cfg, g.fill);
     this.stats.movRough = movingRoughness(g, g.out, this.cfg);
     this.stats.refineMs = performance.now() - t0;
   }

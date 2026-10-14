@@ -68,6 +68,36 @@ describe("geometry", () => {
     expect(joined).toBe(true);
   });
 
+  it("never joins a triangle across the outline of beams in front", () => {
+    const g = processed([{ x: 2, y: 0, r: 0.3, z0: -1, z1: 2 }]), front = new Uint8Array(g.N);
+    for (let i = 0; i < g.N; i++) if (g.out[i] > 0 && g.out[i] < 2.5) front[i] = 1;
+    const loose = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, jump: 5 });   // joins everything
+    const cut = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, jump: 5, front });
+    expect(cut.nt).toBeLessThan(loose.nt);
+    for (let k = 0; k < cut.nt; k++) {
+      const t = [cut.tIdx[3 * k], cut.tIdx[3 * k + 1], cut.tIdx[3 * k + 2]].map(v => front[v]);
+      expect(t[0] === t[1] && t[1] === t[2]).toBe(true);
+    }
+  });
+
+  it("skips edge-on triangles of objects, joins the remembered wall only to beams that see it", () => {
+    const g = processed(), D = g.out.slice(), front = new Uint8Array(g.N), B = g.B;
+    for (let l = 8; l < 12; l++) for (let b = 80; b < 84; b++) { const i = l * B + b; front[i] = 1; D[i] = 2 + 0.4 * (b - 80); }   // a fin along the beams
+    const plain = buildGeometry(g, D, createGeometry(g.N), { ...opts, jump: 5 });
+    const cut = buildGeometry(g, D, createGeometry(g.N), { ...opts, jump: 5, front });
+    const inFront = (geo: ReturnType<typeof createGeometry>) => { let n = 0; for (let k = 0; k < geo.nt; k++) if (front[geo.tIdx[3 * k]]) n++; return n; };
+    expect(inFront(plain)).toBeGreaterThan(10);
+    expect(inFront(cut)).toBe(0);
+    const fill = new Float32Array(g.N), seesWall = new Uint8Array(g.N).fill(1), j = 12 * B + 100;
+    fill[j] = g.out[j]; D.set(g.out); D[j] = 1.5;               // something in front of beam j, its wall remembered
+    seesWall[j + 1] = 0;                                        // the neighbour does not see its remembered wall
+    const geo = buildGeometry(g, D, createGeometry(g.N), { ...opts, fill, seesWall });
+    for (let k = 0; k < geo.nt; k++) {
+      const t = [geo.tIdx[3 * k], geo.tIdx[3 * k + 1], geo.tIdx[3 * k + 2]];
+      if (t.includes(g.N + j)) expect(t).not.toContain(j + 1);
+    }
+  });
+
   it("cell colouring: one colour per slot, grey without one", () => {
     const g = processed(), cells = new Int32Array(g.N).fill(-1);
     cells[0] = 5; cells[1] = 5; cells[2] = 6;

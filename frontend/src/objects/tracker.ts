@@ -25,10 +25,15 @@ export interface Track extends KalmanState {
 }
 
 /** person: upright body-sized box that moved at some point (or is clearly tall). The vertical field of
- *  view is only ~15°, so `hgt` is the visible height and only a lower bound for clipped objects. */
+ *  view is only ~15°, so `hgt` is the visible height and only a lower bound for clipped objects. The
+ *  footprint may be as long as an arm span (about body height: arms stretched out). */
+export const PERSON_LEN = 1.7, PERSON_WID = 0.9;
 export function isPersonLike(d: Detection, moved: boolean): boolean {
-  return d.hgt >= 0.35 && d.len <= 1.3 && d.wid <= 0.9 && (moved || d.hgt >= 1.0);
+  return d.hgt >= 0.35 && d.len <= PERSON_LEN && d.wid <= PERSON_WID && (moved || d.hgt >= 1.0);
 }
+
+/** person score (EMA of isPersonLike) with hysteresis, so the label doesn't flip with every gesture */
+export const PERSON_ON = 0.6, PERSON_OFF = 0.3;
 
 export class Tracker {
   tracks: Track[] = [];
@@ -86,7 +91,8 @@ export class Tracker {
 
   private classify(t: Track, d: Detection): void {
     t.personScore += 0.25 * ((isPersonLike(d, t.moved) ? 1 : 0) - t.personScore);
-    t.cls = t.personScore > 0.5 ? "person" : t.moved ? "moving object" : "object";
+    const person = t.cls === "person" ? t.personScore >= PERSON_OFF : t.personScore > PERSON_ON;
+    t.cls = person ? "person" : t.moved ? "moving object" : "object";
   }
 }
 

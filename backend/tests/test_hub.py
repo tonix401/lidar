@@ -47,7 +47,7 @@ def test_live_frames_are_published_and_recorded(hub):
     h.recorder.start()
     wait_until(lambda: h.recorder.state().get("scans", 0) >= 3)
     h.recorder.stop()
-    assert len(list((h.recorder.rec_dir).glob("*.mrsstream"))) == 1
+    assert len(list((h.recorder.rec_dir).glob("*.tpc.zstd"))) == 1
 
 
 def test_live_source_failures_are_retried_and_reported(hub):
@@ -72,7 +72,7 @@ def test_live_error_is_kept_while_failing(hub):
 
 
 def test_replay_play_pause_step_seek_speed_and_epochs(hub, tmp_path):
-    p = write_recording(tmp_path / "r.mrsstream", n=20, dt=0.05)
+    p = write_recording(tmp_path / "r.tpc", n=20, dt=0.05)
     h = hub()
     h.play_file(p)
     wait_until(lambda: h.feed.meta.get("replay", {}).get("index", 0) >= 3)
@@ -103,7 +103,7 @@ def test_replay_play_pause_step_seek_speed_and_epochs(hub, tmp_path):
 
 
 def test_replay_loops_or_stops_at_the_end(hub, tmp_path):
-    p = write_recording(tmp_path / "r.mrsstream", n=4, dt=0.01)
+    p = write_recording(tmp_path / "r.tpc", n=4, dt=0.01)
     h = hub()
     h.play_file(p)
     h.control("loop", False)
@@ -115,13 +115,13 @@ def test_replay_loops_or_stops_at_the_end(hub, tmp_path):
 
 
 def test_deleted_recording_falls_back_to_live(hub, tmp_path):
-    p = write_recording(tmp_path / "r.mrsstream", n=50, dt=0.02)
+    p = write_recording(tmp_path / "r.tpc", n=50, dt=0.02)
     h = hub()
     h.play_file(p)
     wait_until(lambda: h.feed.frame_id >= 2)
     p.unlink()
     wait_until(lambda: h.source == "live")
-    assert "r.mrsstream" in h.replay_error and "back to live" in h.replay_error
+    assert "r.tpc" in h.replay_error and "back to live" in h.replay_error
 
 
 def test_control_without_replay_is_an_error(hub):

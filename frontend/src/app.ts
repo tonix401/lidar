@@ -342,6 +342,8 @@ export class App {
       cells: this.processor.cells?.assign,
       fill: this.ui.fillWalls ? g.fill : null,
       fillTint: highlight && objects ? rgb => objects.tintBackground(rgb, tintOpts) : undefined,
+      front: this.cfg.outline.on ? g.front : null,
+      seesWall: this.cfg.outline.on ? g.seesWall : null,
     });
     this.scene.update(this.geo);
     if (this.selected && !objects?.tracker.byId(this.selected)) this.selected = 0;
@@ -357,7 +359,7 @@ export class App {
 
   private panelStats(): void {
     const st = this.processor.stats, geo = this.geo!;
-    const parts = ([["intensity", this.cfg.intensity.on, st.intensity], ["outliers", this.cfg.outlier.on, st.outliers], ["flicker", this.cfg.history.on, st.flicker], ["mixed pixels", this.cfg.dynamic.on, st.veils], ["spikes", this.cfg.cells.on, st.spikes]] as const)
+    const parts = ([["intensity", this.cfg.intensity.on, st.intensity], ["outliers", this.cfg.outlier.on, st.outliers], ["flicker", this.cfg.history.on, st.flicker], ["mixed pixels", this.cfg.dynamic.on, st.veils], ["spikes", this.cfg.cells.on, st.spikes], ["at outlines", this.cfg.outline.on, st.mixed]] as const)
       .filter(([, on]) => on).map(([k, , n]) => `${n} ${k}`);
     $("removed").textContent = parts.length ? parts.join(" · ") : "–";
     $("movQuality").textContent = isNaN(st.movRough) ? "–" :

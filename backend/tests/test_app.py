@@ -15,7 +15,7 @@ from tests.test_stream import write_recording
 def setup(tmp_path):
     rec_dir = tmp_path / "recs"
     rec_dir.mkdir()
-    write_recording(rec_dir / "walk.mrsstream", n=30, dt=0.05)
+    write_recording(rec_dir / "walk.tpc", n=30, dt=0.05)
     feed = Feed()
     hub = Hub(feed, rec_dir, endless(), retry_s=0.05)
     hub.start()
@@ -49,12 +49,12 @@ def test_state_status_and_frontend(setup):
 def test_recordings_list_download_delete(setup):
     client, hub, rec_dir = setup
     lst = client.get("/api/recordings").json()
-    assert [r["name"] for r in lst] == ["walk.mrsstream"] and lst[0]["scans"] == 30
-    dl = client.get("/api/recordings/walk.mrsstream")
-    assert dl.status_code == 200 and len(dl.content) == (rec_dir / "walk.mrsstream").stat().st_size
-    assert client.get("/api/recordings/nope.mrsstream").status_code == 404
-    assert client.get("/api/recordings/..%2Fx.mrsstream").status_code in (400, 404)
-    assert client.delete("/api/recordings/walk.mrsstream").json() == []
+    assert [r["name"] for r in lst] == ["walk.tpc"] and lst[0]["scans"] == 30
+    dl = client.get("/api/recordings/walk.tpc")
+    assert dl.status_code == 200 and len(dl.content) == (rec_dir / "walk.tpc").stat().st_size
+    assert client.get("/api/recordings/nope.tpc").status_code == 404
+    assert client.get("/api/recordings/..%2Fx.tpc").status_code in (400, 404)
+    assert client.delete("/api/recordings/walk.tpc").json() == []
 
 
 def test_record_start_stop(setup):
@@ -71,13 +71,13 @@ def test_record_start_stop(setup):
 
 def test_replay_control_and_back_to_live(setup):
     client, hub, _ = setup
-    st = client.post("/api/replay", json={"file": "walk.mrsstream"}).json()
+    st = client.post("/api/replay", json={"file": "walk.tpc"}).json()
     assert st["source"] == "replay"
     st = client.post("/api/replay/control", json={"action": "seek", "value": 20}).json()
     wait_until(lambda: hub.feed.meta.get("replay", {}).get("index", 0) >= 20)
     r = client.post("/api/replay/control", json={"action": "fly"})
     assert r.status_code == 422
-    assert client.post("/api/replay", json={"file": "missing.mrsstream"}).status_code == 404
+    assert client.post("/api/replay", json={"file": "missing.tpc"}).status_code == 404
     assert client.post("/api/live").json()["source"] == "live"
     r = client.post("/api/replay/control", json={"action": "play"})
     assert r.status_code == 400 and r.json() == {"error": "not replaying"}
@@ -85,8 +85,8 @@ def test_replay_control_and_back_to_live(setup):
 
 def test_deleting_the_playing_recording_goes_live(setup):
     client, hub, _ = setup
-    client.post("/api/replay", json={"file": "walk.mrsstream"})
-    client.delete("/api/recordings/walk.mrsstream")
+    client.post("/api/replay", json={"file": "walk.tpc"})
+    client.delete("/api/recordings/walk.tpc")
     assert client.get("/api/state").json()["source"] == "live"
 
 

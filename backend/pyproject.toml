@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "mrs6000"
 version = "0.2.0"
 description = "SICK MRS6000 LiDAR access (REST, CoLa A) and the live viewer backend"
-requires-python = ">=3.11"
+requires-python = ">=3.14"   # compression.zstd (recordings)
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",

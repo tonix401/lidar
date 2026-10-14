@@ -1,15 +1,21 @@
 // Segmentation on the range image (Bogoslavskyi & Stachniss 2016, "depth clustering"): BFS over
 // neighbouring foreground beams, joined when the angle β between the line connecting the two points and
 // the beam is large (same surface) — as a range difference: d1 − d2·cosψ ≤ d2·sinψ / tanθ + margin (the
-// noise margin is needed because our 0.13° beams are closer together than the range noise). Then
-// fragments (legs, arms, gaps from dark clothing) are merged when their footprints are < mergeDist apart.
+// noise margin is needed because our 0.13° beams are closer together than the range noise). A segment that
+// lies behind a neighbouring segment (by more than the foreground tolerance) and is mostly within
+// FRINGE_REACH beams of it is that object's fringe — mixed pixels between it and what is behind it, only a
+// few beams thick along its outline — and is dropped; an object partly hidden behind another one has an
+// inside away from the occluder, whatever its size. Then fragments (legs, arms, gaps from dark clothing)
+// are merged when their footprints are < mergeDist apart.
 import type { Config } from "../config/config";
 import { DEG } from "../core/math";
+import { fgTol } from "./background";
 
 export interface SegGeometry {
   L: number; B: number;
   rayX: Float32Array; rayY: Float32Array; rayZ: Float32Array;
   elev: Float32Array; stepDeg: number;
+  noiseVar?: Float32Array;     // per-beam range noise, for the fringe test (0 = none)
 }
 
 /** one detected object (after merging) */
@@ -27,6 +33,8 @@ export interface Detection {
 export interface Segmentation { detections: Detection[]; starts: number[]; queue: Int32Array }
 
 export const MAX_MERGED_FOOTPRINT = 1.6;
+/** fringe: at least FRINGE_SHARE of its beams within FRINGE_REACH beams (±1 layer) of a nearer segment */
+export const FRINGE_REACH = 2, FRINGE_SHARE = 0.6;
 export const MAX_STATIC_SIZE = 3;
 
 export function segment(geo: SegGeometry, cur: Float32Array, fg: Uint8Array, c: Config["objects"],
@@ -70,12 +78,36 @@ export function segment(geo: SegGeometry, cur: Float32Array, fg: Uint8Array, c: 
   }
   starts.push(tail);
 
+  // fringes: segments behind a neighbouring segment and mostly right next to it
+  const nSeg = starts.length - 1, mean = new Float32Array(nSeg), tol = new Float32Array(nSeg), fringe = new Uint8Array(nSeg);
+  for (let k = 0; k < nSeg; k++) {
+    let s = 0, v = 0;
+    for (let h = starts[k]; h < starts[k + 1]; h++) { s += cur[Q[h]]; v += geo.noiseVar ? geo.noiseVar[Q[h]] : 0; }
+    const n = starts[k + 1] - starts[k];
+    mean[k] = s / n; tol[k] = fgTol(c, v / n, mean[k]);
+  }
+  for (let k = 0; k < nSeg; k++) {
+    const n = starts[k + 1] - starts[k];
+    let near = 0;
+    for (let h = starts[k]; h < starts[k + 1]; h++) {
+      const p = Q[h], l = (p / B) | 0, b = p - l * B;
+      let hit = false;
+      for (let ll = Math.max(0, l - 1); ll <= Math.min(L - 1, l + 1) && !hit; ll++)
+        for (let bb = Math.max(0, b - FRINGE_REACH); bb <= Math.min(B - 1, b + FRINGE_REACH); bb++) {
+          const o = lab[ll * B + bb];
+          if (o >= 0 && o !== k && mean[o] < mean[k] - tol[k]) { hit = true; break; }
+        }
+      if (hit) near++;
+    }
+    if (near >= FRINGE_SHARE * n) fringe[k] = 1;
+  }
+
   // per segment: size and xy bounding box
   interface Seg { k: number; n: number; x0: number; x1: number; y0: number; y1: number; root: number }
   const seg: Seg[] = [];
   for (let k = 0; k < starts.length - 1; k++) {
     const n = starts[k + 1] - starts[k];
-    if (n < Math.min(3, c.minPoints)) continue;
+    if (n < Math.min(3, c.minPoints) || fringe[k]) continue;
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
     for (let h = starts[k]; h < starts[k + 1]; h++) {
       const i = Q[h], d = cur[i], x = rayX[i] * d, y = rayY[i] * d;
