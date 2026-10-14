@@ -31,7 +31,8 @@ export class App {
   readonly store = new Store();
   readonly problems = new Problems(lines => { $("err").textContent = lines.join("\n"); });
   ui = { colorBy: "dist" as ColorBy, layer: -1, maxRange: 60, mount: "upright" as Mount, paused: false, draw: "surface+points" as DrawMode,
-         pointSize: 1, view: "3d" as ViewMode, highlight: true, dimBg: true, boxes: true, labels: true, trails: true, follow: false };
+         pointSize: 1, view: "3d" as ViewMode, highlight: true, dimBg: true, boxes: true, labels: true, trails: true, follow: false,
+         fillWalls: true };
   mode: Mode = "auto";
   manualCfg: Config = defaultConfig();
   cfg: Config;
@@ -108,6 +109,7 @@ export class App {
     if (m === "upright" || m === "upsidedown") { this.ui.mount = m; this.mountChosen = true; }
     const v = this.store.get(KEYS.view);
     if (v === "3d" || v === "top" || v === "image") this.ui.view = v;
+    if (this.store.get(KEYS.fillWalls) === "0") this.ui.fillWalls = false;
     for (const key of Object.values(OBJECT_TOGGLES)) {
       const s = this.store.get(KEYS.objectToggle(key));
       if (s !== null) this.ui[key] = s === "1";
@@ -188,6 +190,9 @@ export class App {
     sel("mount", v => { this.setMount(v as Mount, true); }, this.ui.mount);
     $("legendBox").classList.toggle("hidden", this.ui.colorBy === "uniform");
     $("legend").style.background = turboGradientCss();
+    const fill = $<HTMLInputElement>("fillWalls");
+    fill.checked = this.ui.fillWalls;
+    fill.onchange = () => { this.ui.fillWalls = fill.checked; this.store.set(KEYS.fillWalls, fill.checked ? "1" : "0"); this.rebuild(false); };
     const size = $<HTMLInputElement>("size");
     size.oninput = () => { this.ui.pointSize = +size.value; this.scene.setPointSize(this.ui.pointSize); this.view2d.render(); };
     const range = $<HTMLInputElement>("range");
@@ -335,6 +340,8 @@ export class App {
       colorBy: this.ui.colorBy, layer: this.ui.layer, maxRange: this.ui.maxRange, jump: this.cfg.mesh.jump, jumpRel: this.cfg.mesh.jumpRel,
       tint: highlight && objects ? (i, rgb) => objects.tint(i, rgb, tintOpts) : undefined,
       cells: this.processor.cells?.assign,
+      fill: this.ui.fillWalls ? g.fill : null,
+      fillTint: highlight && objects ? rgb => objects.tintBackground(rgb, tintOpts) : undefined,
     });
     this.scene.update(this.geo);
     if (this.selected && !objects?.tracker.byId(this.selected)) this.selected = 0;

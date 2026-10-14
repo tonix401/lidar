@@ -47,6 +47,27 @@ describe("geometry", () => {
     expect(geo.areaCounts.reduce((a, b) => a + b, 0)).toBe(geo.np);
   });
 
+  it("draws remembered walls as extra vertices, meshed with the wall around them", () => {
+    const g = processed([{ x: 2, y: 0, r: 0.3, z0: -1, z1: 2 }]), fill = new Float32Array(g.N);
+    const wall = processed().out;
+    for (let i = 0; i < g.N; i++) if (g.out[i] > 0 && g.out[i] < wall[i] - 0.5) fill[i] = wall[i];
+    const nFill = fill.filter(f => f > 0).length;
+    expect(nFill).toBeGreaterThan(20);
+    const plain = buildGeometry(g, g.out, createGeometry(g.N), opts);
+    const geo = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, fill, fillTint: rgb => [rgb[0], 0, 0] });
+    expect(geo.np).toBe(plain.np + nFill);
+    expect(geo.nt).toBeGreaterThan(plain.nt + nFill);          // hole closed, joined to the wall around it
+    const i = fill.findIndex(f => f > 0), v = g.N + i;
+    expect(Math.hypot(geo.pos[3 * v], geo.pos[3 * v + 1], geo.pos[3 * v + 2])).toBeCloseTo(fill[i], 4);
+    expect(geo.col[3 * v + 1]).toBe(0);                         // fillTint applied
+    let joined = false;                                         // some fill triangle uses a measured wall vertex
+    for (let k = plain.nt; k < geo.nt && !joined; k++) {
+      const t = [geo.tIdx[3 * k], geo.tIdx[3 * k + 1], geo.tIdx[3 * k + 2]];
+      joined = t.some(x => x >= g.N) && t.some(x => x < g.N);
+    }
+    expect(joined).toBe(true);
+  });
+
   it("cell colouring: one colour per slot, grey without one", () => {
     const g = processed(), cells = new Int32Array(g.N).fill(-1);
     cells[0] = 5; cells[1] = 5; cells[2] = 6;
