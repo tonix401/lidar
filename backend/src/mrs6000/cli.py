@@ -23,7 +23,7 @@ from .env import load_env
 from .errors import describe_error
 from .export import write_scan_files
 from .rest import RestClient, RestError
-from .server.stream import convert
+from .recording import convert
 from .variables import DEFAULT_IP, DEVICE_STATUS, VARIABLES
 
 

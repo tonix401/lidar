@@ -26,7 +26,7 @@ from ..errors import describe_error
 from .feed import Feed
 from .health import log
 from .hub import Hub
-from .stream import list_recordings, recording_path
+from ..recording import list_recordings, recording_path
 
 
 class RecordRequest(BaseModel):
@@ -74,7 +74,7 @@ def create_app(feed: Feed, hub: Hub, rec_dir: Path, frontend_dir: Path | None = 
 
     @app.get("/api/status")
     def status():
-        return {"device": feed.status, "error": hub.live_error if hub.source == "live" else ""}
+        return {"device": feed.status, "error": hub.status_error()}
 
     @app.get("/api/state")
     def state():
@@ -91,24 +91,15 @@ def create_app(feed: Feed, hub: Hub, rec_dir: Path, frontend_dir: Path | None = 
 
     @app.delete("/api/recordings/{name}")
     def delete(name: str):
-        p = recording_path(rec_dir, name)
-        rs = hub.recorder.state()
-        if rs.get("active") and rs.get("file") == p.name and hub.recorder.path.resolve() == p.resolve():
-            raise ValueError("stop the recording first")
-        playing = hub.playing_file()
-        if playing and playing.resolve() == p.resolve():
-            hub.go_live()
-        p.unlink()
+        hub.delete_recording(recording_path(rec_dir, name))
         return list_recordings(rec_dir)
 
     @app.post("/api/record")
     def record(req: RecordRequest):
         if req.action == "start":
-            if hub.scan_source is None:
-                raise ValueError("no sensor connected (offline mode)")
-            hub.recorder.start()
+            hub.start_recording()
         else:
-            hub.recorder.stop()
+            hub.stop_recording()
         return hub.state()
 
     @app.post("/api/replay")

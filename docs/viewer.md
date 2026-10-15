@@ -111,7 +111,19 @@ Recording & replay, Display, Objects and Processing fold by their headings (reme
 
 ## How the panel is built
 
-- **Markup and wiring:** `index.html` holds the static panel. `src/app.ts` wires it to the processor and views; `ui/dom.ts`'s `$()` throws when an id is missing. A unit test checks that every id the code looks up exists.
+- **Markup and wiring:** `index.html` holds the static panel. Each part has its controller in `ui/`, which binds its elements and reports changes through callbacks (a `…Events` interface); `src/app.ts` builds them and wires the callbacks to the processor and views. `ui/dom.ts`'s `$()` throws when an id is missing, and a unit test checks that every id the code looks up exists.
+
+  | Controller | Part of the panel |
+  |---|---|
+  | `statusBar.ts` | title, Stream and Device boxes |
+  | `panelChrome.ts` | folding boxes and the whole panel, panel width, theme picker |
+  | `recordingPanel.ts` | Recording & replay, the replay bar |
+  | `viewTabs.ts` | view tabs, Pause, camera buttons, fit; `bindKeys()` for the keyboard |
+  | `displayControls.ts` | Display: draw mode, colouring and legend, layer, mount, size, range, object overlays (`settings.ts`: what is remembered) |
+  | `objectsPanel.ts` | the object list |
+  | `modeControls.ts` | Processing head: auto / manual, preset, reset |
+  | `stageControls.ts` | one section per stage |
+  | `statsPanel.ts` + `statRows.ts` | the Statistics box and its rows |
 - **Per-view relevance** (`ui/views.ts`) is declared in the markup:
   - `data-views="3d top"` lists the views a control belongs to.
   - `data-draw="points"` / `"mesh"` makes it depend on the draw mode.
@@ -127,9 +139,9 @@ Recording & replay, Display, Objects and Processing fold by their headings (reme
 - **Statistics** (`ui/statsPanel.ts`): the groups are created in a fixed order at start-up, so a group that appears later (e.g. Scene after the first noise estimate) doesn't end up last.
   - Rows are keyed by label and updated in place, so an open ⓘ survives the ~10 updates per second. A row left out of an update is hidden.
   - The rows are only computed while the box is open.
-- **Stage controls** (`ui/stageControls.ts`) are generated from `STAGES` in `config/config.ts`:
+- **Stage controls** (`ui/stageControls.ts`) are generated from `STAGES` (`config/stages.ts`; each stage's `StageDef` lives in its own module):
   - `Stage.host` puts a stage in the objects or display slot instead of the stage list; `Stage.views` limits it to some views.
-  - `editable(key, auto)` decides what is editable: `all`, `toggle` (USER_TOGGLES) or `none`.
+  - `editable(key, auto)` decides what is editable from `StageDef.auto`: `all`, `toggle` or `none`.
   - `Param.edit` gives the typed-in scale and unit (`editSpec`), and `parseParam` clamps and rounds.
   - `fmtParam` shows a typed-in value with all its digits when it has more than the slider step.
 - **Theme** (`ui/theme.ts`, tokens in `styles.css`):

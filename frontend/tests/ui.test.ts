@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultConfig, STAGES } from "../src/config/config";
@@ -22,9 +22,10 @@ beforeEach(() => {
 
 describe("index.html", () => {
   it("has every element the code looks up", () => {
-    const src = ["app.ts", "ui/recordingPanel.ts", "ui/devicePanel.ts"].map(f => readFileSync(resolve(process.cwd(), "src", f), "utf8")).join("\n");
+    const src = (readdirSync(resolve(process.cwd(), "src"), { recursive: true }) as string[]).filter(f => f.endsWith(".ts"))
+      .map(f => readFileSync(resolve(process.cwd(), "src", f), "utf8")).join("\n");
     const ids = [...src.matchAll(/\$(?:<[^>]+>)?\("([\w-]+)"\)/g)].map(m => m[1]);
-    expect(ids.length).toBeGreaterThan(40);
+    expect(new Set(ids).size).toBeGreaterThan(50);
     for (const id of new Set(ids)) expect(document.getElementById(id), id).not.toBeNull();
   });
 });

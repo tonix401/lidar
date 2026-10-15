@@ -4,8 +4,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { css, scale } from "../core/colors";
-import type { ThemeColors } from "../ui/theme";
-import type { Mount, RGB } from "../core/types";
+import type { Mount, RGB, ThemeColors } from "../core/types";
 import { boxCorners, MAX_TRACKS, TRAIL_MAX, trackLabel, type Track } from "../objects/tracker";
 import { mountZSign } from "../pipeline/rays";
 import type { Geometry } from "./geometry";

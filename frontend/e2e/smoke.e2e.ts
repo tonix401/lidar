@@ -14,7 +14,7 @@ const ROOT = resolve(process.cwd(), "..");
 const PYTHON = process.env.PYTHON ?? pythonInVenv(join(ROOT, "backend"));
 const L = 24, B = 301, STEP = 0.4;
 
-/** .tpc writer (format: backend/src/mrs6000/server/stream.py) */
+/** .tpc writer (format: backend/src/mrs6000/recording/format.py) */
 function writeRecording(path: string, scans: number): void {
   const hdr = { layers: L, beams: B, start_azimuth_deg: -60, step_deg: STEP, upside_down: false,
                 elev: elevations(L).flatMap(e => Array(B).fill(e)) };
@@ -177,6 +177,20 @@ describe("viewer in a browser", () => {
     expect(await page.isHidden("#infoTip")).toBe(true);
     await page.click("#recList .rrow");                       // play it again from the list
     await page.waitForFunction(() => !document.getElementById("transport")!.hidden);
+  });
+
+  it("comes back as it was left after a reload (2D map, panel folded, keys)", async () => {
+    await page.keyboard.press("2");
+    await page.keyboard.press("h");
+    expect(await page.locator("#panel.min").count()).toBe(1);
+    await page.reload();
+    await page.waitForFunction(() => (window as unknown as { mrs6000?: { geo: unknown } }).mrs6000?.geo);
+    expect(await appState<string>("a.ui.view")).toBe("top");
+    expect(await page.isVisible("#view2d")).toBe(true);
+    expect(await page.locator("#panel.min").count()).toBe(1);
+    await page.keyboard.press("h");
+    await page.keyboard.press("1");
+    expect(await page.isVisible("#view")).toBe(true);
   });
 
   it("had no errors in the page or the backend", () => {

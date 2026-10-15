@@ -2,7 +2,7 @@
 //  • each parameter: a slider, and its value can be clicked to type an exact number (Enter applies, Esc cancels);
 //  • a dot marks parameters (and stages) that differ from the defaults, with a per-stage reset;
 //  • in auto mode the auto-set stages stay visible, read-only, showing the values auto chose.
-import { defaultConfig, editSpec, fmtParam, parseParam, STAGES, USER_STAGES, USER_TOGGLES, type Config, type Param, type Stage,
+import { defaultConfig, editSpec, fmtParam, parseParam, stageDef, STAGES, type Config, type Param, type Stage,
          type StageKey } from "../config/config";
 import { el } from "./dom";
 import { info } from "./info";
@@ -16,7 +16,8 @@ export interface StageControlsEvents {
 
 /** what the user may change of a stage: everything, only its on/off switch (auto-tuned), or nothing (auto) */
 export function editable(key: StageKey, auto: boolean): "all" | "toggle" | "none" {
-  return !auto || USER_STAGES.has(key) ? "all" : USER_TOGGLES.has(key) ? "toggle" : "none";
+  const role = stageDef(key).auto;
+  return !auto || role === "user" ? "all" : role === "toggle" ? "toggle" : "none";
 }
 
 export class StageControls {
@@ -43,7 +44,7 @@ export class StageControls {
         sum.append(cb);
         this.inputs.set(`${s.key}.on`, cb);
       }
-      const auto = USER_TOGGLES.has(s.key) ? " In auto mode only the on/off switch is yours; the parameters are set automatically." : "";
+      const auto = s.auto === "toggle" ? " In auto mode only the on/off switch is yours; the parameters are set automatically." : "";
       sum.append(el("span", { className: "name", textContent: s.title }),
                  el("span", { className: "tag", textContent: "auto", title: "set by auto mode (switch to manual to edit)" }),
                  el("span", { className: "changed", title: "changed from the default" }),

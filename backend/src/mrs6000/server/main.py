@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None):
     hub = Hub(feed, args.recordings, source)
     if args.record:
         try:
-            hub.recorder.start(args.record)
+            hub.start_recording(args.record)
         except OSError as e:
             log(f"cannot record to {args.record}: {describe_error(e)}")
     if args.replay:

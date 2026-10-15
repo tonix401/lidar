@@ -47,6 +47,14 @@ export function createGeometry(N: number): Geometry {
     np: 0, nl: 0, nv: 0, nt: 0, lo: 0, hi: 1, areaCounts: [0, 0, 0] };
 }
 
+/** a distance that frames the scene: the 90th percentile of the raw ranges (sampled), null without returns */
+export function typicalRange(g: Grid): number | null {
+  const s: number[] = [];
+  for (let i = 0; i < g.N; i += 7) if (g.raw[i] > 0) s.push(g.raw[i]);
+  s.sort((a, b) => a - b);
+  return s.length ? s[Math.floor(s.length * 0.9)] : null;
+}
+
 /** value used for colouring beam i (before scaling) */
 function colorValue(g: Grid, i: number, d: number, z: number, l: number, o: GeometryOptions): number {
   switch (o.colorBy) {

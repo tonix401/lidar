@@ -1,12 +1,35 @@
 // Object detection for one grid: background model → foreground → segmentation → tracking.
 // The pipeline used for fixed ("roadside") LiDARs (Zhao et al. 2019; Wu et al. 3D-DSF), see README.
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { scale } from "../core/colors";
 import type { RGB } from "../core/types";
 import type { Grid } from "../pipeline/grid";
 import { createBackground, foreground, updateBackground, type Background } from "./background";
 import { segment } from "./segment";
 import { Tracker, type Track } from "./tracker";
+
+export type ObjectsConfig = { on: boolean; scope: number; learn: number; minDiff: number; theta: number; margin: number; minPoints: number; mergeDist: number; gate: number; coast: number };
+
+export const objectsStage: StageDef<"objects"> = {
+  key: "objects", title: "Object detection", toggle: true, host: "objects",
+  help: "Separates people and objects: learns the empty scene per beam (slowly, so people standing still stay " +
+        "visible), takes returns clearly in front of it, groups neighbouring beams that lie on the same surface " +
+        "(range-image segmentation, angle criterion), merges fragments, tracks each object with a Kalman filter " +
+        "and classifies it from its box (height, footprint, motion).",
+  params: [
+    { k: "scope", label: "Detect", min: 0, max: 1, step: 1, fmt: v => v ? "foreground + static details" : "foreground only" },
+    { k: "learn", label: "Background learning time", min: 2, max: 120, step: 1, unit: " s" },
+    { k: "minDiff", label: "Min. distance in front of background", min: 0.05, max: 0.6, step: 0.01, unit: " m" },
+    { k: "theta", label: "Segmentation angle θ", min: 2, max: 30, step: 1, unit: "°" },
+    { k: "margin", label: "Segmentation noise margin", min: 0, max: 0.3, step: 0.01, unit: " m" },
+    { k: "minPoints", label: "Min. points per object", min: 3, max: 100, step: 1 },
+    { k: "mergeDist", label: "Merge fragments within", min: 0, max: 1, step: 0.05, unit: " m" },
+    { k: "gate", label: "Tracking gate", min: 0.2, max: 2, step: 0.05, unit: " m" },
+    { k: "coast", label: "Keep lost objects", min: 0, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)`, edit: { scale: 1, unit: "scans" } } ],
+  defaults: { on: true, scope: 0, learn: 20, minDiff: 0.15, theta: 10, margin: 0.08, minPoints: 8, mergeDist: 0.3, gate: 0.8, coast: 10 },
+  auto: "user", preset: false,
+};
 
 export const DIM_BACKGROUND = 0.12, DIM_LIGHT = 0.35;   // share of the colour kept: towards black, towards a light background
 

@@ -1,73 +1,75 @@
-// Wires the pieces together: frame stream → Processor → Geometry → 3D/2D views, plus the panel.
+// The composition root: builds the parts and wires them together. Frame stream → Processor → Geometry →
+// 3D / 2D views; the panel's controllers report changes through callbacks, and rebuild() is the one place
+// that pushes the pipeline's output into every view.
 import { Api, type Frame } from "./api/client";
+import { poll } from "./api/poller";
 import { FrameStream } from "./api/stream";
-import { autoConfig, estimateNoise, type NoiseEstimate } from "./config/auto";
-import { DEFAULT_ADAPTIVE, DEFAULT_INTENSITY, DEFAULT_LAYERCAL, DEFAULT_OBJECTS, DEFAULT_WALLS, defaultConfig, matchingPreset, mergeConfig,
-         USER_STAGES, USER_TOGGLES, withPreset, type Config, type PresetName, type StageKey, type ViewMode } from "./config/config";
+import { matchingPreset, type Config, type ViewMode } from "./config/config";
+import { ConfigState } from "./config/state";
 import { KEYS, Store } from "./config/storage";
-import { turboGradientCss } from "./core/colors";
-import { popcount } from "./core/math";
 import type { Mount, RGB, ServerState } from "./core/types";
-import { historyMask } from "./pipeline/history";
 import { Processor } from "./pipeline/processor";
-import { trackLabel } from "./objects/tracker";
-import { buildGeometry, createGeometry, type ColorBy, type Geometry } from "./render/geometry";
-import { drawParts, Scene3D, type CameraView, type DrawMode } from "./render/scene3d";
+import { describeBeam, type BeamContext } from "./render/describe";
+import { buildGeometry, createGeometry, typicalRange, type Geometry } from "./render/geometry";
+import { Scene3D } from "./render/scene3d";
 import { View2D, type View2DData } from "./render/view2d";
 import { drawHistogram, drawLayerBias } from "./ui/charts";
-import { deviceSummary, renderDevice } from "./ui/devicePanel";
+import { DisplayControls } from "./ui/displayControls";
 import { $ } from "./ui/dom";
-import { bindInfoIcons, setInfo } from "./ui/info";
-import { applyTheme, hexRGB, onSystemThemeChange, themeColors, type Theme } from "./ui/theme";
+import { bindInfoIcons } from "./ui/info";
+import { ModeControls } from "./ui/modeControls";
 import { ObjectsPanel } from "./ui/objectsPanel";
+import { PanelChrome } from "./ui/panelChrome";
 import { Problems } from "./ui/problems";
 import { RecordingPanel } from "./ui/recordingPanel";
+import { loadUi, saveUi, type UiSettings } from "./ui/settings";
 import { StageControls } from "./ui/stageControls";
-import { StatsPanel, type StatRow } from "./ui/statsPanel";
+import { STAT_GROUPS, statRows } from "./ui/statRows";
+import { StatsPanel } from "./ui/statsPanel";
+import { StatusBar } from "./ui/statusBar";
+import { applyTheme, hexRGB, themeColors, type Theme } from "./ui/theme";
 import { applyViews } from "./ui/views";
+import { bindKeys, ViewTabs } from "./ui/viewTabs";
 
-type Mode = "auto" | "manual";
-const MAX_RANGE: [number, number] = [1, 250];
-const PANEL_W: [number, number, number] = [240, 280, 640];       // min, default, max panel width (px)
-const OBJECT_TOGGLES = { oHighlight: "highlight", oDim: "dimBg", oBoxes: "boxes", oLabels: "labels", oTrails: "trails", oFollow: "follow" } as const;
+const AUTO_TUNE_EVERY = 10;                    // scans between auto-mode updates
 
 export class App {
   readonly api = new Api();
   readonly store = new Store();
   readonly problems = new Problems(lines => { $("err").textContent = lines.join("\n"); });
-  ui = { colorBy: "dist" as ColorBy, layer: -1, maxRange: 60, mount: "upright" as Mount, paused: false, draw: "surface+points" as DrawMode,
-         pointSize: 1, view: "3d" as ViewMode, highlight: true, dimBg: true, boxes: true, labels: true, trails: true, follow: false,
-         fillWalls: true };
-  mode: Mode = "auto";
-  manualCfg: Config = defaultConfig();
-  cfg: Config;
-  processor: Processor;
+  readonly settings: ConfigState;
+  readonly ui: UiSettings;
+  readonly processor: Processor;
   geo: Geometry | null = null;
   selected = 0;
-  private mountChosen = false;
-  private autoEst: NoiseEstimate | null = null;
-  private rendersPerSec = NaN;
-  private autoNoise = 0.02;
+  private mountChosen: boolean;
   private scansSeen = 0;
   private lastEpoch: number | null = null;
   private viewDist = 0;
-  private lastFrameAt = 0;
-  private streamText = "–";
+  private rendersPerSec = NaN;
   private dimTo: RGB | undefined;
   private listDirty = false;
   private srv: ServerState | null = null;
   private scene: Scene3D;
   private view2d: View2D;
   private stages: StageControls;
+  private modes: ModeControls;
+  private display: DisplayControls;
+  private tabs: ViewTabs;
+  private chrome: PanelChrome;
   private objectsPanel: ObjectsPanel;
   private recording: RecordingPanel;
-  private statsPanel = new StatsPanel($("statsList"), ["Timing", "Scene", "Removed by filters", "Moving areas (people)", "Objects"]);
+  private status = new StatusBar();
+  private statsPanel = new StatsPanel($("statsList"), [...STAT_GROUPS]);
   private stream: FrameStream;
 
+  /** the processing settings in effect */
+  get cfg(): Config { return this.settings.cfg; }
+
   constructor() {
-    this.loadSettings();
+    ({ ui: this.ui, mountChosen: this.mountChosen } = loadUi(this.store));
+    this.settings = new ConfigState(this.store.json(KEYS.smoothing));
     bindInfoIcons();
-    this.cfg = this.mode === "auto" ? autoConfig(this.manualCfg, this.autoNoise) : structuredClone(this.manualCfg);
     this.processor = new Processor(this.cfg, this.ui.mount);
     const bias = this.store.json<number[]>(KEYS.layerBias);
     if (Array.isArray(bias)) this.processor.setLayerBias(bias);
@@ -76,7 +78,7 @@ export class App {
     this.scene = new Scene3D($("view"), $("labels"), id => this.select(id));
     this.view2d = new View2D($<HTMLCanvasElement>("view2d"), $("tip"), {
       data: () => this.view2dData(),
-      describe: i => this.describe(i),
+      describe: i => describeBeam(this.beamContext()!, i),
       objectAt: i => { const t = this.processor.objects?.tracker.byId(this.processor.objects.cell[i]); return t?.confirmed ? t.id : 0; },
       select: id => this.select(id),
       panelWidth: () => (innerWidth > 600 && !$("panel").classList.contains("min") ? $("panel").offsetWidth + 24 : 0),
@@ -84,19 +86,51 @@ export class App {
       viewDist: () => this.viewDist,
     });
     this.stages = new StageControls({ default: $("stages"), objects: $("objStage"), display: $("meshStage") }, {
-      change: (k, p, v) => this.changeParam(k, p, v),
-      resetStage: k => { this.setCfg({ ...this.cfg, [k]: structuredClone(defaultConfig()[k]) }); this.changed(); },
+      change: (k, p, v) => { this.settings.changeParam(k, p, v); this.configChanged(); },
+      resetStage: k => { this.settings.resetStage(k); this.configChanged(); },
       resetCalibration: () => { this.processor.layerBias.fill(0); this.store.setJson(KEYS.layerBias, Array.from(this.processor.layerBias)); this.processor.reset(); this.drawCharts(); },
       extraOpened: () => this.drawCharts(),
+    });
+    this.modes = new ModeControls({
+      mode: m => { this.settings.setMode(m); this.configChanged(); },
+      preset: name => { this.settings.applyPreset(name); this.processor.reset(); this.configChanged(); },
+      resetAll: () => { this.settings.resetAll(); this.processor.reset(); this.configChanged(); },
     });
     this.objectsPanel = new ObjectsPanel($("objInfo"), $("objList"), id => this.select(id));
     this.recording = new RecordingPanel(this.api, {
       state: s => this.applyState(s), error: e => this.problems.flash("action", e), confirm: msg => window.confirm(msg),
     });
     this.stream = new FrameStream(this.api, f => this.onFrame(f), this.problems.for("server"));
-    this.bindControls();
+    this.display = new DisplayControls(this.ui, this.store, {
+      draw: () => { this.scene.setDraw(this.ui.draw); applyViews($("panel"), this.ui.view, this.ui.draw); },
+      mount: m => this.setMount(m, true),
+      pointSize: () => { this.scene.setPointSize(this.ui.pointSize); this.view2d.render(); },
+      maxRange: () => this.buildGuides(),
+      rebuild: refine => this.rebuild(refine),
+    });
+    this.chrome = new PanelChrome(this.store, {
+      opened: () => this.panelStats(),
+      layout: refit => { if (this.ui.view !== "3d") { if (refit) this.view2d.fit(); this.view2d.render(); } },
+      theme: t => this.setTheme(t),
+    });
+    this.tabs = new ViewTabs({
+      view: v => this.setView(v),
+      camera: c => this.scene.setView(c, this.viewDist || this.ui.maxRange),
+      fit2d: () => { this.view2d.fit(); this.view2d.render(); },
+      pause: () => this.togglePause(),
+    });
+    bindKeys({
+      pause: () => this.togglePause(),
+      view: v => this.setView(v),
+      togglePanel: () => this.chrome.toggle(),
+      step: dir => {
+        if (!this.recording.replaying) return false;
+        this.recording.control("step", dir).then(s => this.applyState(s)).catch(err => this.problems.flash("action", err));
+        return true;
+      },
+    });
     this.syncControls();
-    this.scene.buildGuides(Math.min(this.ui.maxRange, 200), [-13.19, 1.19], this.ui.mount);
+    this.buildGuides();
     this.scene.setDraw(this.ui.draw);
     this.scene.setView("persp", this.ui.maxRange);
     this.setView(this.ui.view);
@@ -104,172 +138,31 @@ export class App {
 
   start(): void {
     void this.stream.run();
-    void this.pollStatus();
-    void this.pollState();
+    poll(() => this.pollStatus(), 2000);
+    poll(async () => this.applyState(await this.api.state()), 500);
     requestAnimationFrame(t => this.animate(t));
   }
 
   // ---------- settings ----------
-  private loadSettings(): void {
-    const saved = this.store.json<{ mode?: string; manual?: unknown }>(KEYS.smoothing);
-    if (saved) {
-      if (saved.mode === "auto" || saved.mode === "manual") this.mode = saved.mode;
-      this.manualCfg = mergeConfig(defaultConfig(), saved.manual);
-    }
-    const m = this.store.get(KEYS.mount);
-    if (m === "upright" || m === "upsidedown") { this.ui.mount = m; this.mountChosen = true; }
-    const v = this.store.get(KEYS.view);
-    if (v === "3d" || v === "top" || v === "image") this.ui.view = v;
-    if (this.store.get(KEYS.fillWalls) === "0") this.ui.fillWalls = false;
-    const r = Number(this.store.get(KEYS.maxRange));
-    if (r >= MAX_RANGE[0] && r <= MAX_RANGE[1]) this.ui.maxRange = r;
-    for (const key of Object.values(OBJECT_TOGGLES)) {
-      const s = this.store.get(KEYS.objectToggle(key));
-      if (s !== null) this.ui[key] = s === "1";
-    }
-  }
-
-  private saveSettings(): void { this.store.setJson(KEYS.smoothing, { mode: this.mode, manual: this.manualCfg }); }
-
-  private setCfg(cfg: Config): void {
-    this.cfg = cfg;
-    this.processor.cfg = cfg;
-  }
-
-  private changeParam(key: StageKey, param: string, value: number | boolean): void {
-    const c = structuredClone(this.cfg);
-    (c[key] as Record<string, number | boolean>)[param] = value;
-    if (key === "intensity") {                               // keep min ≤ max
-      if (param === "min" && c.intensity.max < c.intensity.min) c.intensity.max = c.intensity.min;
-      if (param === "max" && c.intensity.min > c.intensity.max) c.intensity.min = c.intensity.max;
-    }
-    this.setCfg(c);
-    this.changed();
-  }
-
-  /** after any settings change: remember, refresh controls, re-run the spatial stages */
-  private changed(): void {
-    if (this.mode === "manual") this.manualCfg = structuredClone(this.cfg);
-    else {
-      for (const k of USER_STAGES) (this.manualCfg as unknown as Record<string, unknown>)[k] = structuredClone(this.cfg[k]);
-      for (const k of USER_TOGGLES) (this.manualCfg[k] as { on: boolean }).on = (this.cfg[k] as { on: boolean }).on;
-    }
+  /** after a settings change by the user: in effect, remembered, shown, and the spatial stages re-run */
+  private configChanged(): void {
+    this.processor.cfg = this.cfg;
     if (!this.cfg.objects.on) this.processor.objects?.reset();
-    this.saveSettings();
+    this.store.setJson(KEYS.smoothing, this.settings);
     this.syncControls();
     this.rebuild();
   }
 
-  private applyPreset(name: PresetName): void {
-    this.setCfg(withPreset(this.cfg, name));
-    this.processor.reset();
-    this.changed();
-  }
-
   private syncControls(): void {
-    const auto = this.mode === "auto";
-    this.stages.sync(this.cfg, auto);
-    $<HTMLSelectElement>("mode").value = this.mode;
-    const preset = $<HTMLSelectElement>("preset");
-    preset.value = matchingPreset(this.cfg);
-    preset.closest(".row")!.toggleAttribute("hidden", auto);
-    $("resetCfg").hidden = auto;
-    setInfo($("autoInfo"), auto ? (this.autoEst ? "" : "Still learning the scene. ") +
-      "Auto: the filter settings follow the measured noise and motion (see Statistics) and update every second. Intensity filter, " +
-      "radial cells, remembered walls, object detection and the on/off of clean outlines stay yours. Switch to manual to see and edit everything."
-      : "Manual: every stage and parameter is yours; the preset sets the smoothing stages at once ('off' = raw ranges).");
-    $("fillWalls").closest(".row")!.toggleAttribute("hidden", !this.cfg.walls.on);
+    this.stages.sync(this.cfg, this.settings.auto);
+    this.modes.sync(this.settings.mode, matchingPreset(this.cfg), !this.settings.estimate);
+    this.display.sync(this.cfg.walls.on);
     this.drawCharts();
   }
 
   private drawCharts(): void {
     if (this.stages.histogram && this.stages.isOpen("histogram")) drawHistogram(this.stages.histogram, this.processor.rssiHist, this.cfg.intensity);
     if (this.stages.layerBias && this.stages.isOpen("layerbias")) drawLayerBias(this.stages.layerBias, this.processor.layerBias);
-  }
-
-  private bindControls(): void {
-    $<HTMLSelectElement>("mode").onchange = e => {
-      this.mode = (e.target as HTMLSelectElement).value as Mode;
-      this.setCfg(this.mode === "auto" ? autoConfig(this.manualCfg, this.autoNoise) : structuredClone(this.manualCfg));
-      this.changed();
-    };
-    $<HTMLSelectElement>("preset").onchange = e => this.applyPreset((e.target as HTMLSelectElement).value as PresetName);
-    $("resetCfg").onclick = () => {
-      this.setCfg({ ...this.cfg, intensity: { ...DEFAULT_INTENSITY }, layercal: { ...DEFAULT_LAYERCAL }, adaptive: { ...DEFAULT_ADAPTIVE }, objects: { ...DEFAULT_OBJECTS }, walls: { ...DEFAULT_WALLS } });
-      this.applyPreset("medium");
-    };
-    const sel = (id: string, apply: (v: string) => void, value: string) => {
-      const s = $<HTMLSelectElement>(id); s.value = value;
-      s.onchange = () => { apply(s.value); this.rebuild(); };
-    };
-    sel("draw", v => { this.ui.draw = v as DrawMode; this.scene.setDraw(this.ui.draw); applyViews($("panel"), this.ui.view, this.ui.draw); }, this.ui.draw);
-    sel("colorBy", v => { this.ui.colorBy = v as ColorBy; $("legendBox").classList.toggle("hidden", v === "uniform"); }, this.ui.colorBy);
-    sel("layerSel", v => { this.ui.layer = +v; }, "-1");
-    sel("mount", v => { this.setMount(v as Mount, true); }, this.ui.mount);
-    $("legendBox").classList.toggle("hidden", this.ui.colorBy === "uniform");
-    $("legend").style.background = turboGradientCss();
-    const fill = $<HTMLInputElement>("fillWalls");
-    fill.checked = this.ui.fillWalls;
-    fill.onchange = () => { this.ui.fillWalls = fill.checked; this.store.set(KEYS.fillWalls, fill.checked ? "1" : "0"); this.rebuild(false); };
-    const size = $<HTMLInputElement>("size");
-    size.oninput = () => {
-      this.ui.pointSize = +size.value; $("sizeVal").textContent = `${this.ui.pointSize} px`;
-      this.scene.setPointSize(this.ui.pointSize); this.view2d.render();
-    };
-    const range = $<HTMLInputElement>("range");
-    range.value = String(this.ui.maxRange);
-    range.onchange = () => {                                  // Enter or leaving the field
-      const v = range.valueAsNumber;
-      if (!isFinite(v)) { range.value = String(this.ui.maxRange); return; }
-      this.ui.maxRange = Math.min(MAX_RANGE[1], Math.max(MAX_RANGE[0], v));
-      range.value = String(this.ui.maxRange);
-      this.store.set(KEYS.maxRange, range.value);
-      this.buildGuides(); this.rebuild();
-    };
-    range.onkeydown = e => { if (e.key === "Enter") range.blur(); };
-    // every box and section folds on its own, remembered; status boxes start folded, sections open
-    for (const [id, openByDefault] of [["streamBox", false], ["deviceBox", false], ["statsBox", false],
-                                       ["secRec", true], ["secDisplay", true], ["secObjects", true], ["secProc", true]] as const) {
-      const box = $<HTMLDetailsElement>(id), stored = this.store.get(KEYS.fold(id));
-      box.open = stored === null ? openByDefault : stored === "1";
-      box.ontoggle = () => { this.store.set(KEYS.fold(id), box.open ? "1" : "0"); if (box.open) this.panelStats(); };
-    }
-    this.showPanel(this.store.get(KEYS.fold("panel")) !== "0");
-    this.bindPanelResize();
-    const theme = $<HTMLSelectElement>("theme"), stored = this.store.get(KEYS.theme);
-    theme.value = stored === "light" || stored === "system" ? stored : "dark";
-    theme.onchange = () => { this.store.set(KEYS.theme, theme.value); this.setTheme(theme.value as Theme); };
-    onSystemThemeChange(() => this.setTheme(theme.value as Theme));
-    this.setTheme(theme.value as Theme);
-    $("panelToggle").onclick = () => this.showPanel($("panel").classList.contains("min"));
-    for (const [id, key] of Object.entries(OBJECT_TOGGLES)) {
-      const cb = $<HTMLInputElement>(id);
-      cb.checked = this.ui[key];
-      cb.onchange = () => { this.ui[key] = cb.checked; this.store.set(KEYS.objectToggle(key), cb.checked ? "1" : "0"); this.syncDim(); this.rebuild(); };
-    }
-    this.syncDim();
-    for (const b of Array.from($("modeBtns").children) as HTMLElement[]) b.onclick = () => this.setView(b.dataset.mode as ViewMode);
-    const cams: [string, CameraView][] = [["vPersp", "persp"], ["vTop", "top"], ["vSide", "side"], ["vFront", "front"]];
-    for (const [id, v] of cams) $(id).onclick = () => this.scene.setView(v, this.viewDist || this.ui.maxRange);
-    $("fit2d").onclick = () => { this.view2d.fit(); this.view2d.render(); };
-    $("pause").onclick = () => this.togglePause();
-    window.addEventListener("keydown", e => {
-      if (e.target !== document.body) return;
-      if (e.code === "Space") { e.preventDefault(); this.togglePause(); }
-      else if (e.key === "1" || e.key === "2" || e.key === "3") this.setView((["3d", "top", "image"] as const)[+e.key - 1]);
-      else if (e.key === "h" || e.key === "H") this.showPanel($("panel").classList.contains("min"));
-      else if (this.recording.replaying && (e.code === "ArrowLeft" || e.code === "ArrowRight")) {
-        e.preventDefault();
-        this.recording.control("step", e.code === "ArrowLeft" ? -1 : 1).then(s => this.applyState(s)).catch(err => this.problems.flash("action", err));
-      }
-    });
-  }
-
-  /** "dim background" only does something with highlighting on */
-  private syncDim(): void {
-    const dim = $<HTMLInputElement>("oDim");
-    dim.disabled = !this.ui.highlight;
-    dim.parentElement!.classList.toggle("disabled", dim.disabled);
   }
 
   private setTheme(t: Theme): void {
@@ -282,44 +175,19 @@ export class App {
     this.drawCharts();
   }
 
-  /** drag the panel's right edge to resize it (remembered; double-click: default width) */
-  private bindPanelResize(): void {
-    const handle = $("panelResize"), root = document.documentElement;
-    const set = (w: number, save: boolean) => {
-      const px = Math.round(Math.min(PANEL_W[2], Math.max(PANEL_W[0], w)));
-      root.style.setProperty("--panel-w", px + "px");
-      if (save) this.store.set(KEYS.panelWidth, String(px));
-      if (this.ui.view !== "3d") this.view2d.render();
-    };
-    const stored = Number(this.store.get(KEYS.panelWidth));
-    if (stored) set(stored, false);
-    handle.onpointerdown = e => {
-      e.preventDefault();
-      handle.setPointerCapture(e.pointerId);
-      const x0 = e.clientX, w0 = $("panel").offsetWidth;
-      handle.onpointermove = m => set(w0 + m.clientX - x0, false);
-      handle.onpointerup = m => { handle.onpointermove = null; set(w0 + m.clientX - x0, true); };
-    };
-    handle.ondblclick = () => set(PANEL_W[1], true);
-  }
-
-  /** the whole panel folds to its title bar (H), so the view gets the screen */
-  private showPanel(show: boolean): void {
-    $("panel").classList.toggle("min", !show);
-    const t = $("panelToggle");
-    t.textContent = show ? "‹" : "›"; t.title = show ? "hide the panel (H)" : "show the panel (H)";
-    t.setAttribute("aria-expanded", String(show));
-    this.store.set(KEYS.fold("panel"), show ? "1" : "0");
-    if (this.ui.view !== "3d") { this.view2d.fit(); this.view2d.render(); }
-  }
-
+  /** `chosen`: picked by the user (remembered); otherwise it follows the device or the recording */
   private setMount(m: Mount, chosen: boolean): void {
-    if (chosen) { this.mountChosen = true; this.store.set(KEYS.mount, m); }
     this.ui.mount = m;
-    $<HTMLSelectElement>("mount").value = m;
+    if (chosen) { this.mountChosen = true; saveUi(this.store, this.ui, "mount"); }
+    this.display.setMount(m);
     this.processor.setMount(m);
     this.buildGuides();
     this.rebuild();
+  }
+
+  private followMount(upsideDown: boolean): void {
+    const m = upsideDown ? "upsidedown" : "upright";
+    if (!this.mountChosen && m !== this.ui.mount) this.setMount(m, false);
   }
 
   private buildGuides(): void {
@@ -330,14 +198,8 @@ export class App {
 
   private setView(v: ViewMode): void {
     this.ui.view = v;
-    for (const b of Array.from($("modeBtns").children) as HTMLElement[]) b.classList.toggle("on", b.dataset.mode === v);
-    $("view").hidden = v !== "3d"; $("view2d").hidden = v === "3d"; $("labels").hidden = v !== "3d";
-    applyViews($("panel"), v, this.ui.draw);
-    const keys = " · keys: 1 / 2 / 3 switch views, H hides the panel, space pauses" + (this.recording?.replaying ? ", ← → step" : "");
-    setInfo($("hint"), (v === "3d" ? "Mouse: drag rotates, right-drag pans, wheel zooms, click a label selects"
-      : v === "top" ? "Mouse: drag pans, wheel zooms, double-click fits, hover inspects a point, click selects an object"
-      : "Mouse: drag pans, wheel zooms, double-click fits, hover inspects a beam, click selects an object. Grey = no return, pink = removed by filters. Rows are as far apart as the layers in angle") + keys);
-    this.store.set(KEYS.view, v);
+    this.tabs.show(v, this.ui.draw, this.recording.replaying);
+    saveUi(this.store, this.ui, "view");
     this.rebuild(false);                                      // the range image ignores the layer and range filters
     if (v === "3d") this.scene.resize(); else this.view2d.setMode(v);
   }
@@ -351,12 +213,9 @@ export class App {
     this.showPause();
   }
 
-  private showPause(): void {
-    const replay = this.recording.replaying, paused = replay ? !this.recording.playing : this.ui.paused;
-    $("pause").classList.toggle("on", paused);
-    $("pause").hidden = replay;                               // the replay bar has its own play/pause
-    $("pause").textContent = paused ? (replay ? "Play" : "Resume") : "Pause";
-  }
+  private paused(): boolean { return this.recording.replaying ? !this.recording.playing : this.ui.paused; }
+
+  private showPause(): void { this.tabs.showPause(this.paused(), this.recording.replaying); }
 
   private select(id: number): void {
     this.selected = id === 0 || id === this.selected ? 0 : id;
@@ -366,11 +225,7 @@ export class App {
 
   // ---------- frames ----------
   private onFrame({ meta, data }: Frame): void {
-    this.lastFrameAt = performance.now();
-    $("rate").textContent = meta.rate.toFixed(1) + " Hz";
-    $("points").textContent = meta.points.toLocaleString();
-    $("geom").textContent = `${meta.layers} × ${meta.beams}`;
-    this.streamText = `${meta.layers}×${meta.beams} @ ${meta.rate.toFixed(1)} Hz`;
+    this.status.frame(meta);
     // the server bumps `epoch` whenever the sequence jumps (seek, step back, loop, source switch):
     // per-beam histories and tracks from before the jump would be wrong, so start afresh
     if (meta.epoch !== undefined && meta.epoch !== this.lastEpoch) {
@@ -378,10 +233,9 @@ export class App {
       this.lastEpoch = meta.epoch;
     }
     if (meta.source === "replay" && meta.replay) {
-      $("subtitle").textContent = $("subtitle").title = `replaying ${meta.replay.file}`;
+      this.status.replaying(meta.replay.file);
       this.recording.transport(meta.replay);
-      const ud = meta.replay.upside_down;
-      if (!this.mountChosen && typeof ud === "boolean" && (ud ? "upsidedown" : "upright") !== this.ui.mount) this.setMount(ud ? "upsidedown" : "upright", false);
+      if (typeof meta.replay.upside_down === "boolean") this.followMount(meta.replay.upside_down);
     }
     if (this.ui.paused && meta.source !== "replay") return;
     try {
@@ -390,17 +244,19 @@ export class App {
       if (!this.geo || this.geo.N !== g.N) {
         this.geo = createGeometry(g.N);
         this.scene.bind(this.geo);
-        $("layerSel").replaceChildren(new Option("all", "-1"), ...Array.from({ length: g.L }, (_, i) => new Option(String(i), String(i))));
+        this.display.setLayers(g.L);
       }
-      if (this.mode === "auto" && ++this.scansSeen % 10 === 0) this.autoTune();
+      if (this.settings.auto && ++this.scansSeen % AUTO_TUNE_EVERY === 0) {
+        this.settings.autoTune(g);
+        this.processor.cfg = this.cfg;
+        this.syncControls();
+      }
       if (first || !this.viewDist) {                            // first scan: frame the scene
         this.buildGuides();
-        const s: number[] = [];
-        for (let i = 0; i < g.N; i += 7) if (g.raw[i] > 0) s.push(g.raw[i]);
-        s.sort((a, b) => a - b);
-        if (s.length) {
-          this.viewDist = s[Math.floor(s.length * 0.9)];
-          this.scene.setView("persp", this.viewDist);
+        const d = typicalRange(g);
+        if (d) {
+          this.viewDist = d;
+          this.scene.setView("persp", d);
           if (this.ui.view !== "3d") this.view2d.fit();
         }
       }
@@ -409,19 +265,6 @@ export class App {
     } catch (e) {
       this.problems.fail("processing", e);                    // a bad frame must not stop the stream
     }
-  }
-
-  private autoTune(): void {
-    const g = this.processor.grid;
-    const est = g ? estimateNoise(g) : null;
-    if (est) {
-      this.autoNoise = est.noise;
-      this.autoEst = est;
-    }
-    const c = autoConfig(this.manualCfg, this.autoNoise);
-    for (const k of USER_STAGES) (c as unknown as Record<string, unknown>)[k] = this.cfg[k];
-    this.setCfg(c);
-    this.syncControls();
   }
 
   /** re-run spatial stages (unless just done by ingest) and redraw everything */
@@ -459,44 +302,12 @@ export class App {
     const geo = this.geo, st = this.processor.stats;
     if (!geo) return;
     $("sumStats").textContent = `${(st.ingestMs + st.refineMs).toFixed(0)} ms per scan`;
-    if ($<HTMLDetailsElement>("statsBox").open) this.statsPanel.render(this.statRows());
-    const isArea = this.ui.colorBy === "area", isCell = this.ui.colorBy === "cell";
-    $("legend").style.visibility = isArea || isCell ? "hidden" : "";
-    if (isArea) {
-      const [f, d, m] = geo.areaCounts;
-      $("legMin").textContent = `flat ${f} · detail ${d}`; $("legMax").textContent = `moving ${m}`;
-    } else if (isCell) {
-      $("legMin").textContent = this.cfg.cells.on ? "one colour per depth slot" : "radial cells are off"; $("legMax").textContent = "grey: none";
-    } else {
-      const unit = { rssi: "", dist: " m", height: " m", layer: "", uniform: "", noise: " mm", conf: "", area: "", cell: "" }[this.ui.colorBy];
-      const fmt = (v: number) => this.ui.colorBy === "dist" || this.ui.colorBy === "height" ? v.toFixed(1) : this.ui.colorBy === "conf" ? v.toFixed(2) : String(Math.round(v));
-      $("legMin").textContent = fmt(geo.lo) + unit; $("legMax").textContent = fmt(geo.hi) + unit;
-    }
+    if ($<HTMLDetailsElement>("statsBox").open) this.statsPanel.render(statRows({
+      stats: st, cfg: this.cfg, estimate: this.settings.auto ? this.settings.estimate : null, objects: this.processor.objects,
+      tracks: this.visibleTracks(), view: this.ui.view, draw: this.ui.draw, rendersPerSec: this.rendersPerSec, triangles: geo.nt,
+    }));
+    this.display.legend(geo, this.cfg.cells.on);
     this.drawCharts();
-  }
-
-  /** the Statistics box, grouped */
-  private statRows(): Record<string, StatRow[]> {
-    const st = this.processor.stats, c = this.cfg, objects = this.processor.objects, est = this.autoEst;
-    const n = (v: number) => v.toLocaleString();
-    const timing: StatRow[] = [["Processing", (st.ingestMs + st.refineMs).toFixed(0) + " ms", "filters, smoothing and objects for one scan"]];
-    if (this.ui.view === "3d") timing.push(["Renders / s", isNaN(this.rendersPerSec) ? "–" : String(this.rendersPerSec), "3D renders on demand: ≈ scan rate with a still camera"]);
-    if (this.ui.view === "3d" && drawParts(this.ui.draw).surface) timing.push(["Triangles", n(this.geo!.nt)]);
-    const scene: StatRow[] = this.mode === "auto" && est ? [
-      ["Noise floor", `${Math.round(est.noise * 1000)} mm`, `median noise σ of ${n(est.samples)} steady beams; auto mode derives its tolerances from it (change gate 3σ)`],
-      ["Moving beams", `${(100 * est.movingShare).toFixed(1)} %`]] : [];
-    const removed = ([["Intensity filter", c.intensity.on, st.intensity], ["Outliers", c.outlier.on, st.outliers], ["Flicker", c.history.on, st.flicker],
-      ["Mixed pixels", c.dynamic.on, st.veils], ["Spikes (radial cells)", c.cells.on, st.spikes], ["At outlines", c.outline.on, st.mixed]] as const)
-      .filter(([, on]) => on).map(([k, , v]): StatRow => [k, n(v)]);
-    const moving: StatRow[] = isNaN(st.movRough) ? [] : [
-      ["Roughness", st.movRough.toFixed(1) + " mm", "median deviation of a moving beam from its same-surface neighbours; lower is cleaner"],
-      ...(isNaN(st.movFlicker) ? [] : [["Flicker", (st.movFlicker * 100).toFixed(0) + " %", "share of moving beams that switched between object and background since the last scan; lower is cleaner"] as StatRow])];
-    const conf = this.visibleTracks(), people = conf.filter(t => t.cls === "person").length;
-    const obj: StatRow[] = c.objects.on && objects?.bgModel.ready ? [
-      ["Objects", `${conf.length} (${people} ${people === 1 ? "person" : "people"})`],
-      ["Foreground beams", n(objects.foregroundCount), "returns clearly in front of the learned empty scene"],
-      ["Detection time", objects.lastMs.toFixed(1) + " ms"]] : [];
-    return { "Timing": timing, "Scene": scene, "Removed by filters": removed, "Moving areas (people)": moving, "Objects": obj };
   }
 
   private view2dData(): View2DData | null {
@@ -514,20 +325,9 @@ export class App {
     };
   }
 
-  /** tooltip for beam i in the 2D views */
-  describe(i: number): string {
-    const g = this.processor.grid!, meta = this.processor.meta!, objects = this.processor.objects;
-    const l = Math.floor(i / g.B), b = i % g.B;
-    const valid = popcount(g.validBits[i] & historyMask(g.frames)) / Math.max(1, g.frames);
-    const t = objects?.tracker.byId(objects.cell[i]);
-    const bg = objects?.bgModel.bg[i] ?? 0;
-    const status = (this.geo?.vis[i] ? "" : g.rawIn[i] > 0 ? "\nremoved by filters" : "\nno return") +
-      (t?.confirmed ? `\nobject ${trackLabel(t)}` : "") + (bg > 0 ? `\nempty-scene range ${bg.toFixed(2)} m` : "");
-    return `layer ${l}  ·  beam ${b}\n` +
-      `azimuth ${(meta.start_azimuth_deg + b * meta.step_deg).toFixed(2)}°  elevation ${((this.ui.mount === "upsidedown" ? -1 : 1) * g.elev[i]).toFixed(2)}°\n` +
-      `distance ${g.out[i] > 0 ? g.out[i].toFixed(3) + " m" : "–"}  (raw ${g.rawIn[i] > 0 ? g.rawIn[i].toFixed(3) + " m" : "–"})\n` +
-      `RSSI ${g.rssi[i]}  ·  noise σ ${(Math.sqrt(g.noiseVar[i]) * 1000).toFixed(0)} mm  ·  layer offset ${this.cfg.layercal.on ? (this.processor.layerBias[l] * 1000).toFixed(1) + " mm" : "off"}\n` +
-      `valid ${(valid * 100).toFixed(0)} %  ·  jump rate ${(g.jumpRate[i] * 100).toFixed(0)} %  ·  conf ${g.conf[i].toFixed(2)}` + status;
+  private beamContext(): BeamContext | null {
+    const p = this.processor;
+    return p.grid && p.meta ? { grid: p.grid, meta: p.meta, geo: this.geo, objects: p.objects, cfg: this.cfg, layerBias: p.layerBias, mount: this.ui.mount } : null;
   }
 
   // ---------- server state & device status ----------
@@ -537,30 +337,18 @@ export class App {
     this.srv = s;
     s.replay_error ? this.problems.fail("replay", s.replay_error) : this.problems.ok("replay");
     if (s.source === "replay" && !wasReplay) this.ui.paused = false;   // the player has its own pause
-    if (wasReplay && s.source !== "replay") $("subtitle").textContent = "live";
+    if (wasReplay && s.source !== "replay") this.status.live();
     this.recording.apply(s);
-    const dev = deviceSummary(s);
-    $("sumDevice").textContent = dev.text; $("sumDeviceDot").className = "dot " + dev.dot;
+    this.status.server(s);
     this.showPause();
   }
 
-  private async pollState(): Promise<void> {
-    try { this.applyState(await this.api.state()); } catch { /* the frame stream reports connectivity */ }
-    setTimeout(() => void this.pollState(), 500);
-  }
-
   private async pollStatus(): Promise<void> {
-    try {
-      const s = await this.api.status();
-      const d = s.device || {};
-      const replay = this.srv?.source === "replay";
-      if (!this.mountChosen && !replay && typeof d.UpsideDown === "boolean" && (d.UpsideDown ? "upsidedown" : "upright") !== this.ui.mount)
-        this.setMount(d.UpsideDown ? "upsidedown" : "upright", false);
-      if (d.DeviceType && !replay) { $("title").textContent = String(d.DeviceType); $("subtitle").textContent = `SN ${d.SerialNumber} · FW ${d.FirmwareVersion}`; }
-      renderDevice(d);
-      s.error ? this.problems.fail("sensor", s.error) : this.problems.ok("sensor");
-    } catch { /* the frame stream reports connectivity */ }
-    setTimeout(() => void this.pollStatus(), 2000);
+    const s = await this.api.status();
+    const d = s.device || {}, replay = this.srv?.source === "replay";
+    if (!replay && typeof d.UpsideDown === "boolean") this.followMount(d.UpsideDown);
+    this.status.device(d, replay);
+    s.error ? this.problems.fail("sensor", s.error) : this.problems.ok("sensor");
   }
 
   // ---------- render loop ----------
@@ -577,10 +365,6 @@ export class App {
       this.rendersPerSec = Math.round((this.scene.renders - this.fpsRenders) * 1000 / (t - this.fpsT));
       this.fpsRenders = this.scene.renders; this.fpsT = t;
     }
-    const age = performance.now() - this.lastFrameAt, live = this.lastFrameAt && age < 500;
-    const paused = this.recording.replaying ? !this.recording.playing : this.ui.paused;
-    const dot = "dot " + (paused ? "warn" : live ? "ok" : "err");
-    $("streamDot").className = dot; $("sumStreamDot").className = dot;
-    $("sumStream").textContent = paused ? "paused" : live ? this.streamText : this.lastFrameAt ? "no data" : "–";
+    this.status.tick(this.paused());
   }
 }

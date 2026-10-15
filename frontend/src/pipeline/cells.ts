@@ -15,9 +15,30 @@
 // so its median jumps whenever the mix changes, and on the recorded scenes such a correction made moving
 // areas jitter more, not less.
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { sameTol } from "../core/math";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
+
+export type CellsConfig = { on: boolean; colBeams: number; colLayers: number; window: number; k: number; confirm: number; hold: number };
+
+export const cellsStage: StageDef<"cells"> = {
+  key: "cells", title: "Radial cells (experimental)", toggle: true,
+  note: "Off by default: no measurable gain on the recorded scenes (see README). Needs 'Adaptive per area'. Applies to new scans.",
+  help: "Occupancy for moving areas that follows a wedge of space instead of a single beam: the range image is cut " +
+        "into columns radiating from the sensor, each holding a few depth slots that follow what is in them. A slot " +
+        "needs a few hits before it is shown (isolated new returns are dropped; ones touching a confirmed slot are " +
+        "shown at once) and fills short dropouts. Colour by 'Radial cell' to see the columns.",
+  params: [
+    { k: "colBeams", label: "Column width", min: 1, max: 16, step: 1, unit: " beams" },
+    { k: "colLayers", label: "Column height", min: 1, max: 6, step: 1, unit: " layers" },
+    { k: "window", label: "Max. averaging", min: 1, max: 30, step: 1, unit: " scans" },
+    { k: "k", label: "Follow beyond", min: 1, max: 8, step: 0.5, fmt: v => v.toFixed(1) + " σ", edit: { scale: 1, unit: "σ" } },
+    { k: "confirm", label: "Show after", min: 1, max: 5, step: 1, unit: " hits" },
+    { k: "hold", label: "Fill dropouts for", min: 0, max: 10, step: 1, unit: " scans" } ],
+  defaults: { on: false, colBeams: 4, colLayers: 2, window: 5, k: 3, confirm: 2, hold: 2 },
+  auto: "user", preset: false, rawOff: true, removed: { label: "Spikes (radial cells)", stat: "spikes" },
+};
 
 export const K = 4;
 export const HIT = 0.85, MISS = -0.4, DECAY = -0.05, LO_MIN = -2, LO_MAX = 3.5, OFF = 0;

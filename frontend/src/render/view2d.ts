@@ -8,12 +8,11 @@
 // Both draw the same processed data and colours as the 3D view, plus object overlays.
 import { css, packABGR, scale, turbo } from "../core/colors";
 import { DEG } from "../core/math";
-import type { FrameMeta, RGB } from "../core/types";
+import type { FrameMeta, RGB, ThemeColors } from "../core/types";
 import { boxCorners, trackLabel, type Track } from "../objects/tracker";
 import type { Grid } from "../pipeline/grid";
 import type { Geometry } from "./geometry";
 import { drawParts, type DrawMode, type OverlayOptions } from "./scene3d";
-import type { ThemeColors } from "../ui/theme";
 
 export type View2DMode = "top" | "image";
 

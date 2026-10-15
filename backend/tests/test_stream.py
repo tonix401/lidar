@@ -3,12 +3,12 @@ from array import array
 
 import pytest
 
-from mrs6000.server import stream
+from mrs6000.recording import recorder as recorder_module
 from mrs6000.server.frames import encode, meta_for_scan
 from compression import zstd
 
-from mrs6000.server.stream import (Recorder, Recording, convert, list_recordings, recording_path, stream_chunk,
-                                   stream_frame, stream_header, zstd_entry)
+from mrs6000.recording import (Recorder, Recording, convert, list_recordings, recording_path, stream_chunk,
+                               stream_frame, stream_header, zstd_entry)
 from tests.conftest import make_scan
 
 
@@ -110,7 +110,7 @@ def test_recorder(tmp_path):
 def test_recorder_stops_on_disk_errors(tmp_path, monkeypatch):
     def full(frames, level):
         raise OSError(28, "No space left on device")
-    monkeypatch.setattr(stream, "stream_chunk", full)
+    monkeypatch.setattr(recorder_module, "stream_chunk", full)
     rec = Recorder(tmp_path, chunk_frames=1)
     rec.start()
     rec.write(make_scan(), 1.0)                       # must not raise (the writer thread fails)

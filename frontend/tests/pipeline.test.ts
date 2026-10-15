@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_WALLS, defaultConfig, withPreset } from "../src/config/config";
+import { defaultConfig, withPreset } from "../src/config/config";
 import { bilateral } from "../src/pipeline/bilateral";
 import { Cells } from "../src/pipeline/cells";
 import { dynSmooth } from "../src/pipeline/dynsmooth";
-import { createGrid, resetHistory } from "../src/pipeline/grid";
+import { createGrid, gridFieldOwners, resetHistory } from "../src/pipeline/grid";
 import { historyFilter } from "../src/pipeline/history";
 import { intensityFilter, rssiHistogram } from "../src/pipeline/intensity";
 import { applyLayerBias, removeUnobservable, updateLayerBias } from "../src/pipeline/layercal";
@@ -16,7 +16,7 @@ import { updateRays } from "../src/pipeline/rays";
 import { temporalUpdate } from "../src/pipeline/temporal";
 import { dropMixed, frontMask, snapToWall } from "../src/pipeline/outline";
 import { DROPPED, FRONT, updateWall, wallFill } from "../src/pipeline/wall";
-const WALL_N = DEFAULT_WALLS.n, WALL_CONFIRM = DEFAULT_WALLS.confirm;
+const DEFAULT_WALLS = defaultConfig().walls, WALL_N = DEFAULT_WALLS.n, WALL_CONFIRM = DEFAULT_WALLS.confirm;
 import { castRanges, elevations, frameData, meta, type Cylinder } from "./helpers/scene";
 
 function gridFor(o = {}) {
@@ -31,6 +31,20 @@ const rms = (a: Float32Array, b: Float32Array) => {
   for (let i = 0; i < a.length; i++) if (a[i] > 0 && b[i] > 0) { s += (a[i] - b[i]) ** 2; n++; }
   return Math.sqrt(s / n);
 };
+
+describe("grid", () => {
+  it("each per-beam field has one owner; reset forgets the history, keeps the scan and rays", () => {
+    const fields = gridFieldOwners();
+    expect(new Set(fields).size).toBe(fields.length);
+    const g = gridFor(), arrays = g as unknown as Record<string, Uint8Array>;
+    for (const k of fields) arrays[k].fill(1);
+    g.frames = 5;
+    resetHistory(g);
+    const kept = fields.filter(k => arrays[k][0] === 1).sort();
+    expect(kept).toEqual(["conf", "elev", "hist", "mark", "out", "queue", "raw", "rawIn", "rayX", "rayY", "rayZ", "rssi", "work"]);
+    expect(g.frames).toBe(0);
+  });
+});
 
 describe("rays", () => {
   it("upright vs upside down flips only z", () => {

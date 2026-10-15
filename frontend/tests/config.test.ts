@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { autoConfig, estimateNoise } from "../src/config/auto";
-import { defaultConfig, fmtParam, matchingPreset, mergeConfig, PRESETS, STAGES, withPreset } from "../src/config/config";
+import { defaultConfig, fmtParam, matchingPreset, mergeConfig, PRESET_KEYS, PRESETS, STAGES, withPreset } from "../src/config/config";
 import { Store } from "../src/config/storage";
 import { createGrid } from "../src/pipeline/grid";
 
@@ -8,6 +8,14 @@ describe("config", () => {
   it("every stage parameter exists in the default config", () => {
     const cfg = defaultConfig() as unknown as Record<string, Record<string, unknown>>;
     for (const s of STAGES) for (const p of s.params) expect(typeof cfg[s.key][p.k], `${s.key}.${p.k}`).toBe("number");
+  });
+
+  it("each stage is declared once, and the presets cover exactly the preset stages", () => {
+    const keys = STAGES.map(s => s.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(Object.keys(defaultConfig()).sort()).toEqual([...keys].sort());
+    for (const p of Object.values(PRESETS)) expect(Object.keys(p).sort()).toEqual([...PRESET_KEYS].sort());
+    for (const s of STAGES) if (s.removed) expect(s.toggle, s.key).toBe(true);   // the row shows only while the stage is on
   });
 
   it("presets round-trip and leave non-preset stages alone", () => {

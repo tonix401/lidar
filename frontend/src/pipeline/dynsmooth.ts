@@ -11,10 +11,27 @@
 // mixed pixel between person and what is behind, and is dropped. (A beam merely behind a nearer one, e.g.
 // the torso next to an arm, matches its far side and stays.)
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { DEG } from "../core/math";
 import { fgTol } from "../objects/background";
 import type { Grid } from "./grid";
 import { ESTABLISHED, isMoving } from "./motion";
+
+export type DynamicConfig = { on: boolean; radius: number; minPts: number; gap: number };
+
+export const dynamicStage: StageDef<"dynamic"> = {
+  key: "dynamic", title: "Moving-area smoothing", toggle: true, note: "Needs 'Adaptive per area'; replaces its 'Spatial window in moving areas'.",
+  help: "3D smoothing within one scan for moving areas (people), which the other stages pass through almost raw: " +
+        "each moving point becomes the weighted mean of the 3D points within the radius around it (moving or in front " +
+        "of the empty scene only, never the wall behind), moved back onto its own beam. Points hanging between a " +
+        "person and the wall behind (mixed pixels at the outline) are dropped.",
+  params: [
+    { k: "radius", label: "Radius", min: 0.02, max: 0.3, step: 0.01, unit: " m" },
+    { k: "minPts", label: "Min. points", min: 1, max: 30, step: 1 },
+    { k: "gap", label: "Drop mixed pixels behind by", min: 0.1, max: 1, step: 0.05, unit: " m" } ],
+  defaults: { on: true, radius: 0.08, minPts: 4, gap: 0.3 },
+  auto: "tuned", preset: true, removed: { label: "Mixed pixels", stat: "veils" },
+};
 
 export const MAX_WB = 12, MAX_WL = 2;
 

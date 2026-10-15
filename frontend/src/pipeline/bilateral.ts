@@ -1,9 +1,25 @@
 // Spatial smoothing: bilateral filter on the range image. Weighted mean of neighbouring ranges, weight
 // falls off with pixel distance and with range difference, so surfaces are smoothed but depth edges kept.
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { sameTol } from "../core/math";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
+
+export type SpatialConfig = { on: boolean; wb: number; wl: number; srAbs: number; srRel: number; srNoise: number };
+
+export const spatialStage: StageDef<"spatial"> = {
+  key: "spatial", title: "Spatial smoothing", toggle: true,
+  help: "Edge-preserving bilateral filter on the range image.",
+  params: [
+    { k: "wb", label: "Window along layer", min: 1, max: 12, step: 1, unit: " beams" },
+    { k: "wl", label: "Window across layers", min: 0, max: 2, step: 1, unit: " layers" },
+    { k: "srAbs", label: "Edge sensitivity σ", min: 0.01, max: 0.3, step: 0.005, unit: " m" },
+    { k: "srRel", label: "σ growth", min: 0, max: 0.05, step: 0.001, pct: true },
+    { k: "srNoise", label: "σ from beam noise", min: 0, max: 5, step: 0.5, fmt: v => v ? `≥ ${v}× beam σ` : "off", edit: { scale: 1, unit: "× beam σ (0 = off)" } } ],
+  defaults: { on: true, wb: 3, wl: 0, srAbs: 0.05, srRel: 0.01, srNoise: 0 },
+  auto: "tuned", preset: true,
+};
 
 export function bilateral(g: Grid, src: Float32Array, dst: Float32Array, cfg: Config): void {
   const c = cfg.spatial, { L, B } = g;

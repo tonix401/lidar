@@ -53,7 +53,7 @@ def test_fmt_value():
 
 
 def test_compress_and_decompress(tmp_path, capsys):
-    from mrs6000.server.stream import Recording
+    from mrs6000.recording import Recording
     from tests.test_stream import write_recording
     p = write_recording(tmp_path / "a.tpc", n=30)
     raw = p.read_bytes()

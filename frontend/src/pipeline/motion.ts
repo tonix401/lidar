@@ -9,8 +9,30 @@
 //    object), limited to `growBeams` steps and never into beams that match their own established
 //    background (so it can't leak along a wall); grown beams stay "moving" for `hold` scans.
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { popcount } from "../core/math";
+import { beamState } from "./beamState";
 import type { Grid } from "./grid";
+
+export type AdaptiveConfig = { on: boolean; minCluster: number; growBeams: number; hold: number; dynWindow: number; dynSpatial: number };
+
+export const adaptiveStage: StageDef<"adaptive"> = {
+  key: "adaptive", title: "Adaptive per area", toggle: true,
+  help: "Detects moving areas (clusters of beams whose new value breaks their own history) and processes them " +
+        "lightly: no long averaging or confirmation delay, no flicker removal, little spatial smoothing, no plane " +
+        "flattening. Static areas keep the full settings below. Colour by 'Area class' to see the result.",
+  params: [
+    { k: "minCluster", label: "Min. moving cluster", min: 1, max: 60, step: 1, unit: " beams" },
+    { k: "growBeams", label: "Grow into object", min: 0, max: 30, step: 1, unit: " steps" },
+    { k: "hold", label: "Stay 'moving' after last change", min: 1, max: 50, step: 1, fmt: v => `${v} scans (${(v / 10).toFixed(1)} s)`, edit: { scale: 1, unit: "scans" } },
+    { k: "dynWindow", label: "Averaging in moving areas", min: 1, max: 5, step: 1, unit: " scans" },
+    { k: "dynSpatial", label: "Spatial window in moving areas", min: 0, max: 6, step: 1, unit: " beams" } ],
+  defaults: { on: true, minCluster: 8, growBeams: 12, hold: 10, dynWindow: 1, dynSpatial: 1 },
+  auto: "tuned", preset: false, rawOff: true,
+};
+
+/** per-scan change flags, scans left "moving" */
+export const motionState = beamState({ changed: Uint8Array, motionHold: Uint8Array }, { reset: true });
 
 export const ESTABLISHED = 5;
 

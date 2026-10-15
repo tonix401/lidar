@@ -2,9 +2,32 @@
 // neighbours in a window, fit a plane, and if the patch is planar enough move the point along its own
 // laser ray onto that plane. Also classifies g.area (0 flat · 1 detail · 2 moving).
 import type { Config } from "../config/config";
-import { sameTol, smallestEigenvector } from "../core/math";
+import type { StageDef } from "../config/types";
+import { DEG, sameTol, smallestEigenvector } from "../core/math";
+import { beamState } from "./beamState";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
+
+export type PlanesConfig = { on: boolean; wb: number; wl: number; planarity: number; minPts: number; minCos: number; tolAbs: number; tolRel: number; noiseFlat: number };
+
+export const planesStage: StageDef<"planes"> = {
+  key: "planes", title: "Flatten planes", toggle: true,
+  help: "Fits a plane around each point (PCA) and moves the point along its beam onto it.",
+  params: [
+    { k: "wb", label: "Window along layer", min: 1, max: 12, step: 1, unit: " beams" },
+    { k: "wl", label: "Window across layers", min: 0, max: 2, step: 1, unit: " layers" },
+    { k: "planarity", label: "Max. curvature", min: 0.002, max: 0.2, step: 0.002, fmt: v => v.toFixed(3) },
+    { k: "minPts", label: "Min. points in fit", min: 4, max: 40, step: 1 },
+    { k: "minCos", label: "Min. incidence", min: 0, max: 0.6, step: 0.01, fmt: v => Math.round(Math.asin(v) / DEG) + "° to surface" },
+    { k: "tolAbs", label: "Same-surface tolerance", min: 0.05, max: 0.5, step: 0.01, unit: " m" },
+    { k: "tolRel", label: "Tolerance growth", min: 0, max: 0.1, step: 0.005, pct: true },
+    { k: "noiseFlat", label: "Flat test", min: 0, max: 5, step: 0.25, fmt: v => v ? `residual ≤ ${v}× noise floor` : "curvature only", edit: { scale: 1, unit: "× noise floor (0 = curvature only)" } } ],
+  defaults: { on: true, wb: 4, wl: 1, planarity: 0.02, minPts: 8, minCos: 0.15, tolAbs: 0.2, tolRel: 0.03, noiseFlat: 0 },
+  auto: "tuned", preset: true,
+};
+
+/** area class: 0 static flat · 1 static detail · 2 moving */
+export const planesState = beamState({ area: Uint8Array }, { reset: true });
 
 export function flattenPlanes(g: Grid, src: Float32Array, dst: Float32Array, cfg: Config): void {
   const c = cfg.planes, { L, B, rayX, rayY, rayZ, area } = g;
