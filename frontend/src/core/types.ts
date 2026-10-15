@@ -65,3 +65,7 @@ export interface StatusResponse {
 
 export type Mount = "upright" | "upsidedown";
 export type RGB = [number, number, number];
+
+/** the current theme's colours as CSS colour strings (read by ui/theme.ts, used by the canvas and WebGL views) */
+export interface ThemeColors { bg: string; border: string; text: string; muted: string; accent: string; warn: string;
+                               grid: string; grid2: string; axis: string; mark: string; field: string }

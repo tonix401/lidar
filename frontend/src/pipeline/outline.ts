@@ -16,10 +16,29 @@
 // on the floor, a hand on the wall: closer to it than that tolerance), with at least 2 such neighbours (a
 // lone noisy wall beam would cut a hole into the wall). None of this needs a confirmed track.
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { fgTol } from "../objects/background";
+import { beamState } from "./beamState";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
 import { DROPPED, FRONT, onWall, wallTol } from "./wall";
+
+export type OutlineConfig = { on: boolean; margin: number };
+
+export const outlineStage: StageDef<"outline"> = {
+  key: "outline", title: "Clean outlines", toggle: true,
+  help: "Where a person is in front of a wall: wall the person has just uncovered is drawn as the remembered wall " +
+        "(instead of the rough patch it would otherwise trail for a second), points hanging between the person and " +
+        "the wall (mixed pixels) are dropped, and the mesh is never joined across the outline of anything in front of " +
+        "the empty scene.",
+  params: [
+    { k: "margin", label: "Drop outline points behind the object by", min: 0.03, max: 0.5, step: 0.01, unit: " m" } ],
+  defaults: { on: true, margin: 0.12 },
+  auto: "toggle", preset: true, removed: { label: "At outlines", stat: "mixed" },
+};
+
+/** in front of the empty scene (objects), for the mesh */
+export const outlineState = beamState({ front: Uint8Array }, { reset: true });
 
 /** moving beams that see their remembered wall are drawn as it; `learn` (once per scan) averages them into
  *  a memory that rests on few readings. Returns how many. */

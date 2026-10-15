@@ -49,6 +49,19 @@ The scan is handled as an organized range image (layer × beam), in this order:
     - Where a moving beam, or any return in front of the empty scene, hides the remembered surface, the surface is drawn too (a little darker), as a second vertex per beam meshed with the wall around it (`render/geometry.ts`: vertex N + i).
     - On both recordings, 99.6–100 % of the hidden wall beams are filled once the wall behind has been seen, with at most 7 beams per scan drawn more than 0.3 m in front of the empty scene.
 
+## Adding a stage
+
+The order of the stages is `PIPELINE` in `pipeline/steps.ts`; `Processor` only runs it. A stage is one module:
+
+1. **Settings:** export its config slice type and a `StageDef` (`config/types.ts`): title, help and parameters for the panel, `defaults`, and its role.
+   - `auto`: `"user"` (stays the user's in auto mode), `"toggle"` (only its on/off), or `"tuned"` (set by `autoConfig` in `config/auto.ts`, which then needs a line for it).
+   - `preset`: part of the smoothing presets; `rawOff`: switched off by the "off" preset without being one.
+   - `removed`: the `FrameStats` counter of returns it drops, shown under Statistics → Removed by filters.
+2. **Per-beam state** it keeps across scans: a `beamState({ … }, { reset })` declaration (`pipeline/beamState.ts`). `reset: true` means `resetHistory()` forgets it (seek, source switch, preset change).
+3. **Wiring:** add the slice to `Config` and the `StageDef` to `STAGES` (`config/stages.ts`, panel order), the state to `STATES` and `Grid` (`pipeline/grid.ts`), and a step to `PIPELINE`. Steps run in three phases: `ingest` (once per new scan, raw ranges), `refine` (spatial, also after a settings change), `learn` (once per new scan, after refine).
+
+Tests that guard this: `config.test.ts` (every stage declared once; presets cover exactly the preset stages), `pipeline.test.ts` ("grid": one owner per field, what reset forgets), and `golden.test.ts` (whole-pipeline checksums on a synthetic walk; a refactor must keep them, and an intended change updates them with `npx vitest run -u`).
+
 ## Auto and manual mode
 
 **Auto mode** (the default) derives the settings from the measured noise floor `nf` (`config/auto.ts`):
@@ -67,7 +80,7 @@ The scan is handled as an organized range image (layer × beam), in this order:
   - plane tolerance max(0.1 m, 5·nf), flat test 2× noise floor;
   - mesh break 0.3 m + 3 %;
   - clean-outline margin max(0.1 m, 4·nf).
-- **What stays yours** (`USER_STAGES`, `USER_TOGGLES` in `config/config.ts`):
+- **What stays yours** (`StageDef.auto` "user" / "toggle"; `ConfigState` in `config/state.ts`):
   - the intensity filter, radial cells, remembered walls and object detection (content choices and experiments, not quality tuning);
   - the on/off switch of clean outlines (its margin stays automatic).
 
@@ -76,7 +89,7 @@ The scan is handled as an organized range image (layer × beam), in this order:
 **Manual mode** keeps its own settings (stored separately, so switching back and forth keeps both). Its **presets** set the smoothing stages (outlier, temporal, history, spatial, moving-area, planes, mesh, clean outlines):
 - **light / medium / strong:** shorter or longer averaging, weaker or stronger spatial smoothing and plane flattening. Medium is the default.
 - **off = the raw ranges.** It also switches off the stages that change ranges outside the presets: intensity filter, layer calibration, adaptive processing, radial cells and remembered walls. A test checks that the output then equals the input on every scan, with a person walking and calibration offsets loaded. Picking another preset switches layer calibration, adaptive processing and remembered walls back on, and leaves the opt-in ones (intensity filter, radial cells) as they were. Object detection is never touched: it only reads the ranges.
-- Changing any preset stage by hand shows "custom". A preset (and "Reset to defaults") restarts the per-beam histories, so the next few scans are empty or raw until the model is re-established.
+- Changing any preset stage by hand shows "custom". "Reset to defaults" restores every stage, radial cells included. A preset (and "Reset to defaults") restarts the per-beam histories, so the next few scans are empty or raw until the model is re-established.
 
 ## Metrics and results
 
@@ -114,7 +127,7 @@ Columns of 4 × 2 beams radiating from the sensor, each with up to 4 depth slots
 
 ## Not done yet: the echo test
 
-The device runs on the last echo. Record the same walk with `mrs6000 echo-filter first` and with `last` (no `--save`; restore afterwards) and compare *flicker* and the outline. Streaming several echoes (`cola.py` parses them, `stream.py` and `frames.py` only send `echoes[0]`) is only worth it if the difference is large. Recording more echoes would also need a `.tpc` format change ([recordings.md](recordings.md)).
+The device runs on the last echo. Record the same walk with `mrs6000 echo-filter first` and with `last` (no `--save`; restore afterwards) and compare *flicker* and the outline. Streaming several echoes (`cola.py` parses them, `recording/format.py` and `server/frames.py` only send `echoes[0]`) is only worth it if the difference is large. Recording more echoes would also need a `.tpc` format change ([recordings.md](recordings.md)).
 
 ## Views and panel
 

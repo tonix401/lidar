@@ -2,12 +2,14 @@
 
 - **Environment:** plain Python venv in `backend/.venv` and npm in `frontend/`, nothing system-specific. `shell.nix` is only a convenience for NixOS. There, Playwright's downloaded Chromium does not run, so the system `chromium` is used. Python must be 3.14 or newer for the standard-library `compression.zstd` ([setup.md](setup.md)).
 - **Tests:** `make test` runs everything (counts as of 2026-10-15).
-  - **Backend:** 61 pytest tests. They use fake sensors, so no hardware is needed.
-  - **Frontend:** 97 vitest tests: synthetic ray-cast scenes (`tests/helpers/scene.ts`) for the pipeline, objects and geometry, and jsdom tests for the panel (`tests/ui.test.ts` loads the real `index.html`).
-  - **End to end:** 7 browser tests with Playwright and Chrome or Chromium (see [setup.md](setup.md)). The test writes its own `.tpc` recording (a person walking past a wall) and replays it through the real backend. Its screenshots go to `frontend/e2e/artifacts/` (3d, map, range-image, grid-lines, light, recording-menu).
+  - **Backend:** 66 pytest tests. They use fake sensors, so no hardware is needed.
+  - **Frontend:** 112 vitest tests: synthetic ray-cast scenes (`tests/helpers/scene.ts`) for the pipeline, objects and geometry, and jsdom tests for the panel (`tests/ui.test.ts` loads the real `index.html`).
+    - `tests/golden.test.ts` snapshots checksums of the whole pipeline's output on a synthetic walk (5 configurations). A refactor must leave them unchanged; update them (`npx vitest run -u`) only for an intended change in behaviour, and say so in the commit.
+    - `tests/layers.test.ts` (and `backend/tests/test_layers.py`) enforce which folder may import which ([architecture.md](architecture.md#layers)).
+  - **End to end:** 8 browser tests with Playwright and Chrome or Chromium (see [setup.md](setup.md)). The test writes its own `.tpc` recording (a person walking past a wall) and replays it through the real backend. Its screenshots go to `frontend/e2e/artifacts/` (3d, map, range-image, grid-lines, light, recording-menu).
   - `make test-e2e` rebuilds the frontend first; `cd frontend && npm run test:e2e` uses the existing `frontend/dist`.
 - **Testing without the sensor:** everything can be checked on recordings, e.g. `make run ARGS="--offline --replay recordings/<file>.tpc.zstd"`. Don't leave the sensor streaming for tests.
-- **Debugging:** in the browser console, `window.mrs6000` is the app: `processor` holds the grid and objects, `cfg` the settings, `geo` the geometry.
+- **Debugging:** in the browser console, `window.mrs6000` is the app: `processor` holds the grid and objects, `cfg` the settings in effect (`settings` the auto/manual state), `ui` the display settings, `geo` the geometry.
 - **Checking three.js code on its own:** while `npm run dev` is running, the browser console can import any source module, e.g. `await import('/src/render/sensorModel.ts')`. For `three` itself, use the pre-bundled path that Vite rewrote into that module (`/node_modules/.vite/deps/three.js?v=…`; fetch the module's source to find it). Render the module into a separate `WebGLRenderer` canvas to look at it from fixed cameras without touching the app's scene.
 - **Browser storage keys** (`config/storage.ts`; every access is guarded, so blocked storage just means defaults):
   - `mrs6000.smoothing.v3`: mode and manual settings (merged onto the defaults on load, so old or partial settings still work).

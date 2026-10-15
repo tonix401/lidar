@@ -18,10 +18,32 @@
 // memory (fewer than cfg.walls.n readings, where people keep walking) is averaged with its neighbours' memories
 // on the same surface: a plane through their 3D points (weighted by their readings), intersected with its beam.
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { sameTol, smallestEigenvector } from "../core/math";
 import { fgTol } from "../objects/background";
+import { beamState } from "./beamState";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
+
+export type WallsConfig = { on: boolean; n: number; confirm: number };
+
+export const wallsStage: StageDef<"walls"> = {
+  key: "walls", title: "Remembered walls", toggle: true,
+  help: "Each beam remembers the static surface it sees (averaged over its last readings). Where a person hides " +
+        "it, it is drawn behind them (Display → 'Walls behind moving objects'), and 'Clean outlines' puts uncovered " +
+        "wall back onto it. A new surface only replaces the remembered one after it has stayed for a few scans.",
+  params: [
+    { k: "n", label: "Average up to", min: 1, max: 100, step: 1, unit: " readings" },
+    { k: "confirm", label: "New surface after", min: 1, max: 30, step: 1, unit: " scans" } ],
+  defaults: { on: true, n: 20, confirm: 5 },
+  auto: "user", preset: false, rawOff: true,
+};
+
+/** remembered static range (+ readings; drawn behind objects), a new static surface until confirmed, and
+ *  whether the return matches the remembered wall (or none is known) */
+export const wallState = beamState({
+  wall: Float32Array, wallN: Uint8Array, fill: Float32Array, wallCand: Float32Array, wallCandN: Uint8Array, seesWall: Uint8Array,
+}, { reset: true });
 
 /** g.front: 1 = in front of the empty scene, DROPPED = a mixed pixel dropped at an outline (outline.ts) */
 export const FRONT = 1, DROPPED = 2;

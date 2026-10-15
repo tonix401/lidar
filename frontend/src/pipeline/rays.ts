@@ -1,6 +1,10 @@
 import { DEG } from "../core/math";
 import type { Mount } from "../core/types";
+import { beamState } from "./beamState";
 import type { Grid } from "./grid";
+
+/** unit ray per beam (sensor frame, mount applied) */
+export const rayState = beamState({ rayX: Float32Array, rayY: Float32Array, rayZ: Float32Array }, { reset: false });
 
 /** the vertical mirroring of the mount: world z = this × sensor z (the 3D view mirrors guides and housing alike) */
 export function mountZSign(mount: Mount): 1 | -1 { return mount === "upsidedown" ? -1 : 1; }

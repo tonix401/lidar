@@ -1,6 +1,6 @@
 # Recording and replay
 
-These run server-side (`backend/src/mrs6000/server/`: `stream.py` for the format, `hub.py` for playback), with controls on the page.
+These run server-side (`backend/src/mrs6000/recording/` for the format, reading and recording; `server/player.py` and `server/hub.py` for playback), with controls on the page.
 
 - **Recording:** the **● Record** button in the panel saves the *live* stream to `recordings/rec_YYYYmmdd_HHMMSS.tpc.zstd`, zstd-compressed (lossless) to about 7.5 MB per minute. It keeps recording while you watch a replay.
   - A writer thread compresses in chunks of 25 scans (2.5 s), so the live stream never waits on it. A file being recorded can be replayed up to its last complete chunk, and a crash loses at most the last 2.5 s.

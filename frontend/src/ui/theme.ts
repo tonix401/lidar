@@ -1,9 +1,9 @@
 // Theme: "dark" (default), "light", or "system" (follows the OS). The colours live as CSS variables on
 // :root (styles.css); canvas and WebGL drawing read them through themeColors().
-export type Theme = "system" | "dark" | "light";
+import type { ThemeColors } from "../core/types";
 
-export interface ThemeColors { bg: string; border: string; text: string; muted: string; accent: string; warn: string;
-                               grid: string; grid2: string; axis: string; mark: string; field: string }
+export type Theme = "system" | "dark" | "light";
+export type { ThemeColors };
 
 export function applyTheme(t: Theme, root: HTMLElement = document.documentElement): void { root.dataset.theme = t; }
 

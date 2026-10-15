@@ -1,9 +1,24 @@
 // Outlier rejection on the raw scan: a return survives if enough azimuth neighbours in its layer lie at
 // a similar distance — isolated spikes and mixed pixels go, object edges (supported on one side) stay.
 import type { Config } from "../config/config";
+import type { StageDef } from "../config/types";
 import { sameTol } from "../core/math";
 import type { Grid } from "./grid";
 import { isMoving } from "./motion";
+
+export type OutlierConfig = { on: boolean; win: number; need: number; abs: number; rel: number };
+
+export const outlierStage: StageDef<"outlier"> = {
+  key: "outlier", title: "Outlier filter", toggle: true, note: "Applies to new scans.",
+  help: "Drops returns without enough neighbours at a similar distance in the same layer.",
+  params: [
+    { k: "win", label: "Neighbour window", min: 1, max: 8, step: 1, unit: " beams" },
+    { k: "need", label: "Required neighbours", min: 1, max: 6, step: 1 },
+    { k: "abs", label: "Distance tolerance", min: 0.02, max: 0.5, step: 0.01, unit: " m" },
+    { k: "rel", label: "Tolerance growth", min: 0, max: 0.1, step: 0.005, pct: true } ],
+  defaults: { on: true, win: 2, need: 1, abs: 0.15, rel: 0.03 },
+  auto: "tuned", preset: true, removed: { label: "Outliers", stat: "outliers" },
+};
 
 export function rejectOutliers(g: Grid, src: Float32Array, dst: Float32Array, cfg: Config): number {
   const { L, B } = g, c = cfg.outlier;

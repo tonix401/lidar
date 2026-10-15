@@ -95,9 +95,9 @@ def test_replay_play_pause_step_seek_speed_and_epochs(hub, tmp_path):
     h.control("seek", 15)
     wait_until(lambda: h.feed.meta["replay"]["index"] == 15)
     h.control("speed", 3.1)
-    assert h.speed == 4.0
+    assert h.player.speed == 4.0
     h.control("toggle")
-    assert h.playing
+    assert h.player.playing
     with pytest.raises(ValueError):
         h.control("fly")
 
@@ -107,7 +107,7 @@ def test_replay_loops_or_stops_at_the_end(hub, tmp_path):
     h = hub()
     h.play_file(p)
     h.control("loop", False)
-    wait_until(lambda: not h.playing)
+    wait_until(lambda: not h.player.playing)
     assert h.feed.meta["replay"]["index"] == 3
     epoch = h.epoch
     h.control("play")                                 # restarts from the beginning

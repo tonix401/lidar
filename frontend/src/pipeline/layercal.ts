@@ -3,8 +3,23 @@
 // range image: for points on flat surfaces, fit a plane through the neighbouring layers only (±2 layers,
 // ±6 beams) and measure along the beam how far this layer's point is from it. The median per layer is its
 // remaining offset; the offset moves a fraction `rate` towards it.
+import type { StageDef } from "../config/types";
 import { smallestEigenvector } from "../core/math";
 import type { Grid } from "./grid";
+
+export type LayercalConfig = { on: boolean; rate: number };
+
+export const layercalStage: StageDef<"layercal"> = {
+  key: "layercal", title: "Layer calibration", toggle: true, extra: "layerbias",
+  help: "Each of the 24 layers has its own constant distance offset (up to a few cm), which shows up as horizontal " +
+        "waves on flat walls. The offsets are learned live: each layer's median deviation from planes fitted through " +
+        "its neighbouring layers. Mean, bottom-to-top trend and slow bow are pinned to zero (unmeasurable " +
+        "from plane fits, they would otherwise drift into tilted or bulging walls), so scale and verticality are untouched.",
+  params: [
+    { k: "rate", label: "Learning rate", min: 0, max: 1, step: 0.05, fmt: v => v ? Math.round(v * 100) + " % per update" : "frozen", edit: { scale: 100, unit: "% per update" } } ],
+  defaults: { on: true, rate: 0.3 },
+  auto: "tuned", preset: false, rawOff: true,
+};
 
 export function applyLayerBias(g: Grid, ranges: Float32Array, bias: Float32Array): void {
   for (let l = 0; l < g.L; l++) {

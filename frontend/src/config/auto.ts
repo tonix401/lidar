@@ -6,7 +6,9 @@
 //  • motion: established model (≥5 scans), cluster filter, seeds grown into the object, short persistence
 //    (Dynablox); cluster 8 / grow 12 / hold 1 s tuned on a recorded walk.
 import type { Grid } from "../pipeline/grid";
-import { DEFAULT_ADAPTIVE, DEFAULT_LAYERCAL, type Config } from "./config";
+import { layercalStage } from "../pipeline/layercal";
+import { adaptiveStage } from "../pipeline/motion";
+import type { Config } from "./config";
 
 export function autoConfig(base: Config, noise: number): Config {
   const nf = noise, rel = 4 * Math.tan(0.13 * Math.PI / 180);      // ≈ 1 % of range per beam step
@@ -20,8 +22,8 @@ export function autoConfig(base: Config, noise: number): Config {
     planes: { on: true, wb: 5, wl: 1, planarity: 0.02, minPts: 12, minCos: 0.2, tolAbs: Math.max(0.1, 5 * nf), tolRel: 0.02, noiseFlat: 2 },
     mesh: { jump: 0.3, jumpRel: 0.03 },
     outline: { on: base.outline.on, margin: Math.max(0.1, 4 * nf) },   // on/off stays the user's (USER_TOGGLES)
-    adaptive: { ...DEFAULT_ADAPTIVE },
-    layercal: { ...DEFAULT_LAYERCAL },
+    adaptive: { ...adaptiveStage.defaults },
+    layercal: { ...layercalStage.defaults },
   };
 }
 

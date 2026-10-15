@@ -7,10 +7,9 @@ import time
 from typing import Callable
 
 from ..errors import describe_error
+from ..log import log
 
-
-def log(msg: str):
-    print(time.strftime("[%H:%M:%S] ") + msg, flush=True)
+__all__ = ["log", "Health", "supervised"]
 
 
 class Health:
