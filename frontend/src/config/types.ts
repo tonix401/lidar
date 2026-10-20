@@ -19,7 +19,7 @@ export interface Param {
 }
 
 /** FrameStats counters of returns a stage removed (shown under Statistics → Removed by filters) */
-export type RemovedStat = "intensity" | "outliers" | "flicker" | "veils" | "spikes" | "mixed";
+export type RemovedStat = "intensity" | "outliers" | "seenThrough" | "flicker" | "veils" | "spikes" | "mixed";
 
 export interface StageDef<K extends StageKey = StageKey> {
   key: K;

@@ -28,6 +28,8 @@ export interface FrameMeta {
   source?: Source;
   epoch?: number;
   replay?: ReplayState;
+  sensor?: string;                 // which sensor of the rig
+  upside_down?: boolean | null;    // its mount, when known
 }
 
 export interface RecordingState {
@@ -47,7 +49,22 @@ export interface ServerState {
   live_error: string;
   replay_error: string;
   sensor: boolean;
+  sensors?: string[];              // the current source's sensors
 }
+
+/** /api/sensors: one sensor of the current source */
+export interface SensorInfo {
+  name: string; live: boolean; ip?: string; error?: string; rate?: number; device?: string; upside_down?: boolean | null;
+  clock?: { offset_s: number; drift_ppm: number; samples: number; resets: number };
+}
+
+/** the rig (backend/src/mrs6000/rig.py): poses in m and degrees */
+export interface RigPose { x: number; y: number; z: number; yaw: number; pitch: number; roll: number }
+export interface RigSensor {
+  name: string; ip?: string; pose?: RigPose; time_offset_s?: number; calibrated?: string;
+  quality?: Record<string, unknown>;
+}
+export interface Rig { sensors: RigSensor[] }
 
 export interface RecordingInfo {
   name: string;
@@ -56,6 +73,7 @@ export interface RecordingInfo {
   seconds?: number;
   created?: number;
   error?: string;
+  sensors?: string[];              // a multi-sensor session
 }
 
 export interface StatusResponse {

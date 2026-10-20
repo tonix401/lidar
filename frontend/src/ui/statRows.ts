@@ -21,6 +21,7 @@ export interface StatInputs {
   draw: DrawMode;
   rendersPerSec: number;
   triangles: number;
+  multi?: boolean;                     // several sensors (the cross-check only applies then)
 }
 
 export function statRows(s: StatInputs): Record<(typeof STAT_GROUPS)[number], StatRow[]> {
@@ -32,7 +33,7 @@ export function statRows(s: StatInputs): Record<(typeof STAT_GROUPS)[number], St
   const scene: StatRow[] = est ? [
     ["Noise floor", `${Math.round(est.noise * 1000)} mm`, `median noise σ of ${n(est.samples)} steady beams; auto mode derives its tolerances from it (change gate 3σ)`],
     ["Moving beams", `${(100 * est.movingShare).toFixed(1)} %`]] : [];
-  const removed = STAGES.filter(st => st.removed && (c[st.key] as { on?: boolean }).on)
+  const removed = STAGES.filter(st => st.removed && (c[st.key] as { on?: boolean }).on && (st.key !== "crosscheck" || s.multi))
     .map((stage): StatRow => [stage.removed!.label, n(st[stage.removed!.stat])]);
   const moving: StatRow[] = isNaN(st.movRough) ? [] : [
     ["Roughness", st.movRough.toFixed(1) + " mm", "median deviation of a moving beam from its same-surface neighbours; lower is cleaner"],

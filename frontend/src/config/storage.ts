@@ -31,6 +31,8 @@ export const KEYS = {
   mount: "mrs6000.mount.v2",
   view: "mrs6000.view",
   fillWalls: "mrs6000.fillWalls",
+  mergeSurfaces: "mrs6000.mergeSurfaces",
+  gridStyle: "mrs6000.gridStyle",
   maxRange: "mrs6000.maxRange",
   theme: "mrs6000.theme",
   panelWidth: "mrs6000.panelWidth",

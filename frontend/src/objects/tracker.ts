@@ -42,6 +42,9 @@ export class Tracker {
 
   reset(): void { this.tracks = []; this.index.clear(); }
 
+  /** take over another tracker's tracks (the page's mirror of a worker's tracker, pipeline/snapshot.ts) */
+  restore(tracks: Track[]): void { this.tracks = tracks; this.index = new Map(tracks.map(t => [t.id, t])); }
+
   byId(id: number): Track | undefined { return this.index.get(id); }
 
   update(detections: Detection[], dt: number, c: Config["objects"]): void {

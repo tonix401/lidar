@@ -15,6 +15,7 @@
   - `mrs6000.smoothing.v3`: mode and manual settings (merged onto the defaults on load, so old or partial settings still work).
   - `mrs6000.layerbias.v2`: the learned per-layer offsets.
   - `mrs6000.mount.v2`: only once chosen; otherwise the device's or the recording's `UpsideDown` is followed.
+  - `mrs6000.gridStyle`: range rings or square grid; `mrs6000.mergeSurfaces`: one wall where sensors overlap.
   - `mrs6000.view`.
   - `mrs6000.fillWalls`: drawing remembered walls behind objects (the memory itself is the "walls" stage in the settings).
   - `mrs6000.maxRange`, `mrs6000.theme`, `mrs6000.panelWidth`.
@@ -26,6 +27,16 @@
 
 - **No constant comes from a recording.** Thresholds follow the measured noise (σ, noise floor), the sensor geometry (beam step 0.13°, layer spacing about 0.6°) or physical sizes (a person's height and arm span). The recordings are only a check, and every rule gets a unit test on a synthetic scene that the recordings don't contain ([objects.md](objects.md#measured-2026-10-14)).
 - **Measure before and after** on at least two recordings, and keep a change only if it helps on both. Write the numbers into the docs with the date and the recording names. Record what didn't work as well (radial cells, [pipeline.md](pipeline.md#radial-cells-what-was-tried)).
+
+## Several sensors without the sensors
+
+`tests/helpers/rig.ts` ray-casts a room with furniture and a walking person from any sensor pose (`RIG3`: three sensors around it), `tests/helpers/calib.ts` builds calibration inputs with known truth from it, and `tests/helpers/session.ts` writes `.tpc` files and session folders. `make sim-session` (`scripts/simulate-session.ts`, bundled with the frontend's rolldown) writes one to `recordings/sim_rig3/` to replay in the page; `e2e/rig.e2e.ts` calibrates one in headless Chromium.
+
+## Measuring speed
+
+- **`make profile`** (`scripts/profile-pipeline.ts`) runs the three simulated sensors at full resolution (24 × 923, a person walking, the cross-check on) and prints the ms per call of every pipeline step, the geometry build and the fusion. `ARGS="301 100"` for other beams and scans. Scans are cast before the clock starts. For a per-function breakdown, run the bundle (`frontend/node_modules/.cache/profile-pipeline.mjs`) with `node --cpu-prof` and sum the self time per function.
+- **Keep the output identical:** the golden checksums hash the exact bytes of the output, so an optimization that keeps the same arithmetic in the same order (precomputed per-beam points, hoisted constant terms, no allocations) passes them unchanged. For untracked stages, compare against the old function on the same inputs before deleting it.
+- **In the browser:** replay `recordings/sim_rig3` (`make sim-session`), count `scene.update` calls per sensor (scans drawn) and the processed scans, and take a CPU profile over CDP (`Profiler.start`; build with `--minify false` for names). Headless Chromium renders with SwiftShader, a software GPU, so its frame rate says nothing about a real one. With `--enable-gpu --ignore-gpu-blocklist --use-angle=vulkan` (or `gl-egl`) it uses the machine's GPU.
 
 ## Measuring on recordings offline
 

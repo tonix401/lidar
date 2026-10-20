@@ -7,9 +7,10 @@ What the page shows and how its controls behave, then how the panel is built ([b
 The three views are tabs near the top of the panel (keys **1 / 2 / 3**):
 - **3D:**
   - Perspective / Top / level Side / Front cameras.
-  - Range rings, the ±60° field of view and the vertical fan of the lowest and highest layer.
+  - Range rings (or a square grid, Display → Grid), the ±60° field of view and the vertical fan of the lowest and highest layer.
   - It renders on demand: about 10 renders/s with a still camera, one per scan.
   - A model of the sensor housing sits at the origin. It is mirrored with the mount setting, so with "upside down" the window is at the top ([sensor.md](sensor.md#housing)).
+  - With several sensors, each is drawn where it stands, with its own housing and field of view, around the world origin ([multisensor.md](multisensor.md#the-page-with-several-sensors)).
 - **2D map:**
   - Top-down, with the sensor at the bottom looking up.
   - Range rings and a scale bar.
@@ -34,7 +35,8 @@ The three views are tabs near the top of the panel (keys **1 / 2 / 3**):
 
 Lines break at the same depth jumps as the surface (Display → Mesh / lines). Seen from above (map), a surface is drawn as its layer lines, and vertical lines become short radial strokes.
 
-**Colour by:** uniform (shaded), RSSI, distance (default), height, layer, noise σ, confidence, area class, radial cell. The legend under the selector shows the range; area class and radial cell show counts instead.
+**Colour by:** uniform (shaded), RSSI, distance (default), distance to the main sensor, height, layer, noise σ, confidence, area class, radial cell, sensor (several sensors: one colour each).
+- **Distance to the main sensor** is the one to use with several sensors. "Distance" measures from each sensor itself and stretches each sensor's colours over its own scan, so a wall two sensors see gets two clashing colours that shift with every scan. This one measures every point from the primary sensor (the first, unless another row is clicked in Sensors) on one scale for all sensors, which only follows the scene's spread when that changes by more than 10 %. Measured on the simulated rig: the same spot seen by two sensors differs by at most 0.03 in a colour channel, against 0.94 with "Distance" (`tests/geometry.test.ts`). With one sensor it is the same as "Distance". The legend under the selector shows the range; area class and radial cell show counts instead.
 
 ## Panel
 
@@ -46,17 +48,18 @@ From top to bottom:
    - **Statistics** `NN ms per scan`: every number computed live, grouped. Groups without rows are hidden:
      - *Timing*: processing ms; renders/s (3D); triangles (3D with a surface).
      - *Scene*: noise floor and share of moving beams (auto mode only, from its noise estimate).
-     - *Removed by filters*: one row per active filter (intensity, outliers, flicker, mixed pixels, spikes, at outlines).
+     - *Removed by filters*: one row per active filter (intensity, outliers, seen through by another sensor (several sensors), flicker, mixed pixels, spikes, at outlines).
      - *Moving areas (people)*: roughness and flicker ([pipeline.md](pipeline.md#metrics-and-results)).
      - *Objects*: count (people), foreground beams, detection time.
-3. **Recording & replay**: the source and **● Record**. Recordings are listed by name and duration, with ▶ and ⋯.
+3. **Recording & replay**: the source and **● Record**. Recordings are listed by name and duration (sessions with their sensor count), with ▶ and ⋯.
    - Clicking the row plays it too.
    - ⋯ opens a menu with the size, scan count and date, Download and Delete…; Delete asks first. Click outside or on ⋯ again to close it.
    - The playing recording has a blue left edge; one being recorded has a red dot.
-4. **View tabs**, with **Pause** for the live view. Pause is hidden during a replay, where the replay bar has play/pause.
-5. **Display**: visual settings only, and only those that change something in the current view (below).
-6. **Objects**: the object list (click to select), with a count badge in the heading.
-7. **Processing**: what changes the data, the same in every view.
+4. **Sensors** (only with several sensors): a row per sensor, and **Calibrate…** ([multisensor.md](multisensor.md#calibration-where-each-sensor-stands)). Clicking a row makes it the primary sensor, which the range image, the map and the statistics show.
+5. **View tabs**, with **Pause** for the live view. Pause is hidden during a replay, where the replay bar has play/pause.
+6. **Display**: visual settings only, and only those that change something in the current view (below).
+7. **Objects**: the object list (click to select), with a count badge in the heading.
+8. **Processing**: what changes the data, the same in every view.
    - Mounting, auto / manual, the preset (manual only).
    - "Filters & smoothing": the stages, including Remembered walls, Clean outlines and Object detection.
    - Reset to defaults (manual only).
@@ -70,7 +73,9 @@ Recording & replay, Display, Objects and Processing fold by their headings (reme
 | Draw | ✓ | ✓ | – |
 | Colour by, legend | ✓ | ✓ | ✓ (uniform → distance) |
 | Walls behind moving objects | ✓ (only while Remembered walls is on) | – | – |
+| One wall where sensors overlap | ✓ (several sensors, [multisensor.md](multisensor.md#the-page-with-several-sensors)) | – | – |
 | Layer, Max range | ✓ | ✓ | – |
+| Grid: range rings / square grid | ✓ | ✓ | – |
 | Point size | ✓ with points | ✓ with points | – |
 | Mesh / lines (break at jump) | ✓ with surface or lines | ✓ with surface or lines | – |
 | highlight, dim background, boxes, labels | ✓ | ✓ | ✓ |
@@ -90,6 +95,8 @@ Recording & replay, Display, Objects and Processing fold by their headings (reme
 - **Auto mode:** the stages that auto sets stay visible but read-only, greyed and tagged "auto", showing the values auto chose. What stays yours in auto mode:
   - the intensity filter, radial cells, remembered walls and object detection (fully);
   - the on/off switch of Clean outlines (auto still tunes its margin).
+
+**Grid** (Display): the distance guides on the ground. *Range rings* around the sensor (every 5 m, 10 m beyond 60 m), or a *square grid* along the axes: 1 m out to a Max range of 20 m, then 5 m, then 10 m, every 5th (or 2nd) line stronger (`squareStep` in `render/scene3d.ts`). On the map the square grid follows the zoom (lines at least 12 px apart) and is labelled along the sensor's axes. With several sensors both are around the world origin. Remembered (`mrs6000.gridStyle`).
 
 **Other controls:**
 - **Max range** is a number field: type a value and press Enter. It is clamped to 1–250 m and remembered.
@@ -121,6 +128,7 @@ Recording & replay, Display, Objects and Processing fold by their headings (reme
   | `viewTabs.ts` | view tabs, Pause, camera buttons, fit; `bindKeys()` for the keyboard |
   | `displayControls.ts` | Display: draw mode, colouring and legend, layer, mount, size, range, object overlays (`settings.ts`: what is remembered) |
   | `objectsPanel.ts` | the object list |
+  | `sensorsPanel.ts` | the Sensors section and the calibration's steps and results |
   | `modeControls.ts` | Processing head: auto / manual, preset, reset |
   | `stageControls.ts` | one section per stage |
   | `statsPanel.ts` + `statRows.ts` | the Statistics box and its rows |

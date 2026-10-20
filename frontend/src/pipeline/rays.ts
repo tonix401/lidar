@@ -4,7 +4,7 @@ import { beamState } from "./beamState";
 import type { Grid } from "./grid";
 
 /** unit ray per beam (sensor frame, mount applied) */
-export const rayState = beamState({ rayX: Float32Array, rayY: Float32Array, rayZ: Float32Array }, { reset: false });
+export const rayState = beamState({ rayX: Float32Array, rayY: Float32Array, rayZ: Float32Array, rayElev: Float32Array }, { reset: false });
 
 /** the vertical mirroring of the mount: world z = this × sensor z (the 3D view mirrors guides and housing alike) */
 export function mountZSign(mount: Mount): 1 | -1 { return mount === "upsidedown" ? -1 : 1; }
@@ -14,10 +14,18 @@ export function mountZSign(mount: Mount): 1 | -1 { return mount === "upsidedown"
  *  parameter set, the sensor already reports azimuth in world left/right, so y must NOT change sign
  *  (doing so mirrored the scene). Same convention as SICK's own viewer. */
 export function updateRays(g: Grid, az0Deg: number, stepDeg: number, mount: Mount): void {
-  const zs = mountZSign(mount);
+  const zs = mountZSign(mount), key = `${az0Deg} ${stepDeg} ${zs}`, { elev, rayElev } = g;
+  if (g.raysReady && g.rayKey === key && sameElevations(elev, rayElev)) return;   // ~1 ms of trig saved per scan
   for (let l = 0; l < g.L; l++) for (let b = 0; b < g.B; b++) {
     const i = l * g.B + b, az = (az0Deg + b * stepDeg) * DEG, el = g.elev[i] * DEG;
     g.rayX[i] = Math.cos(az) * Math.cos(el); g.rayY[i] = Math.sin(az) * Math.cos(el); g.rayZ[i] = zs * Math.sin(el);
   }
+  rayElev.set(elev);
+  g.rayKey = key;
   g.raysReady = true;
+}
+
+function sameElevations(a: Float32Array, b: Float32Array): boolean {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }

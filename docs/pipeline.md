@@ -17,6 +17,7 @@ The scan is handled as an organized range image (layer × beam), in this order:
    - Clusters grow into the object up to 12 steps, never into beams that match their own background.
    - Beams stay "moving" for 10 scans (Dynablox-style).
 4. **Outlier filter**: neighbour support within the layer, relaxed in moving areas.
+   - **Cross-check with other sensors** (`crosscheck.ts`, several sensors only; [multisensor.md](multisensor.md#the-other-sensors-in-the-processing)): drops returns another sensor sees through, here on the new scan and again on the final output (after clean outlines).
 5. **Temporal smoothing**: Kalman-style per beam, with learned noise σ, change confirmation, and a second background mode for edges.
 6. **History filter**: drops flickering beams using the last 32 scans and adds confidence weights.
 7. **Bilateral filter**: the range σ adapts to each beam's noise. Moving beams are left to the next stage.

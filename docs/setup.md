@@ -23,6 +23,8 @@ You need **Python ≥ 3.14** (with `venv`; recordings use its built-in `compress
 | `make dev` | Backend :8000 + Vite hot reload on http://localhost:5173 (also takes `ARGS`) |
 | `make test` | pytest + typecheck + vitest + browser end-to-end test (`test-backend`, `test-frontend`, `test-e2e` run each part) |
 | `make browser` | Download Playwright's Chromium (about 150 MB), only if you have no Chrome/Chromium |
+| `make sim-session` | A simulated 3-sensor session in `recordings/sim_rig3/` ([multisensor.md](multisensor.md); `ARGS="folder seconds beams"`) |
+| `make profile` | ms per scan of every pipeline step, three simulated sensors at full resolution ([development.md](development.md#measuring-speed); `ARGS="beams scans"`) |
 | `make clean` | Remove build output and test artifacts |
 
 `backend/.venv` is rebuilt from scratch whenever `backend/pyproject.toml` is newer than `backend/.venv/.installed`.

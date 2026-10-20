@@ -91,7 +91,7 @@ export class RecordingPanel {
         className: "rrow" + (r.name === cur ? " cur" : "") + (recording ? " recording" : ""), onclick: () => { if (!r.error) void run(); },
         title: r.error ? r.error : r.name,
       }, el("span", { className: "nm", textContent: r.name.replace(/\.(tpc(\.zstd)?|mrsstream)$/, "") }),
-         el("span", { className: "mt", textContent: r.error ? "unreadable" : fmtTime(r.seconds) }));
+         el("span", { className: "mt", textContent: r.error ? "unreadable" : fmtTime(r.seconds) + (r.sensors ? ` · ${r.sensors.length} sensors` : "") }));
       row.append(play, more);
       return row;
     }));
@@ -112,7 +112,7 @@ export class RecordingPanel {
     const was = this.menu?.dataset.name;
     this.closeMenu();
     if (was === r.name) return;                                 // second click closes it
-    const dl = el("a", { className: "mi", textContent: "Download", href: this.api.downloadUrl(r.name), download: r.name });
+    const dl = el("a", { className: "mi", textContent: "Download", href: this.api.downloadUrl(r.name), download: r.sensors ? r.name + ".zip" : r.name });
     const del = el("button", { className: "mi danger", textContent: "Delete…", disabled: recording, title: recording ? "stop the recording first" : "" });
     dl.onclick = () => this.closeMenu();
     del.onclick = () => {
@@ -121,7 +121,7 @@ export class RecordingPanel {
       this.api.deleteRecording(r.name).then(l => this.renderList(l)).catch(err => this.ev.error(err));
     };
     const m = el("div", { className: "menu" },
-      el("div", { className: "mh", textContent: r.error ? "unreadable" : `${fmtMB(r.bytes)} · ${r.scans} scans` }),
+      el("div", { className: "mh", textContent: r.error ? "unreadable" : `${fmtMB(r.bytes)} · ${r.scans} scans` + (r.sensors ? ` · ${r.sensors.join(", ")}` : "") }),
       el("div", { className: "mh sub2", textContent: r.created ? `recorded ${new Date(r.created * 1000).toLocaleString()}` : r.name }), dl, del);
     m.dataset.name = r.name;
     m.onclick = e => e.stopPropagation();

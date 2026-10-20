@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import socket
 import struct
+import time
 from typing import Iterator
 
 from .model import DIST_INVALID_MAX_RAW, Echo, Layer, Scan
@@ -157,10 +158,12 @@ class ColaClient:
         try:
             while True:
                 frame = self.recv()
+                received = time.time()
                 tok = frame.split()
                 if len(tok) < 2 or tok[1] != "LMDscandata" or tok[0] not in ("sSN", "sRA"):
                     continue
                 layer, meta = parse_lmdscandata(tok[2:])
+                layer.received_s = received
                 # layers arrive bottom-to-top; a non-increasing angle starts a new revolution
                 if last_angle is not None and layer.elevation_deg <= last_angle and current.layers:
                     current.scan_frequency_hz = freq

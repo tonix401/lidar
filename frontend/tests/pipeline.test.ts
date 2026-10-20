@@ -41,7 +41,7 @@ describe("grid", () => {
     g.frames = 5;
     resetHistory(g);
     const kept = fields.filter(k => arrays[k][0] === 1).sort();
-    expect(kept).toEqual(["conf", "elev", "hist", "mark", "out", "queue", "raw", "rawIn", "rayX", "rayY", "rayZ", "rssi", "work"]);
+    expect(kept).toEqual(["conf", "elev", "hist", "mark", "out", "queue", "raw", "rawIn", "rayElev", "rayX", "rayY", "rayZ", "rssi", "seenThrough", "work"]);
     expect(g.frames).toBe(0);
   });
 });

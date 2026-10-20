@@ -2,6 +2,7 @@
 // Index i = layer * B + beam. All per-beam state of the pipeline lives here: the scan itself and its buffers
 // below, plus each stage's own state, declared in its module (beamState.ts) and listed in STATES.
 import { beamState, type StateFields } from "./beamState";
+import { crosscheckState } from "./crosscheck";
 import { historyState } from "./history";
 import { motionState } from "./motion";
 import { outlineState } from "./outline";
@@ -19,15 +20,15 @@ const scanState = beamState({
   queue: Int32Array, mark: Uint8Array,                          // BFS scratch
 }, { reset: false });
 
-const STATES = [scanState, rayState, temporalState, motionState, historyState, planesState, wallState, outlineState];
+const STATES = [scanState, rayState, temporalState, motionState, historyState, planesState, wallState, outlineState, crosscheckState];
 
-export type Grid = { L: number; B: number; N: number; frames: number; raysReady: boolean } &
+export type Grid = { L: number; B: number; N: number; frames: number; raysReady: boolean; rayKey: string } &
   StateFields<typeof scanState> & StateFields<typeof rayState> & StateFields<typeof temporalState> &
   StateFields<typeof motionState> & StateFields<typeof historyState> & StateFields<typeof planesState> &
-  StateFields<typeof wallState> & StateFields<typeof outlineState>;
+  StateFields<typeof wallState> & StateFields<typeof outlineState> & StateFields<typeof crosscheckState>;
 
 export function createGrid(L: number, B: number): Grid {
-  const N = L * B, g: Record<string, unknown> = { L, B, N, frames: 0, raysReady: false };
+  const N = L * B, g: Record<string, unknown> = { L, B, N, frames: 0, raysReady: false, rayKey: "" };
   for (const s of STATES) for (const [k, Ctor] of Object.entries(s.fields)) g[k] = new Ctor(N);
   return g as Grid;
 }

@@ -8,7 +8,7 @@ exports[`golden pipeline output > auto config 1`] = `
   "layerBias": "ad2f857d",
   "out": "0f6304db",
   "seesWall": "9f707268",
-  "stats": "{"intensity":0,"outliers":26,"flicker":17,"veils":0,"spikes":0,"mixed":0,"wallFill":264,"movRough":2.217411994934082,"movFlicker":0.06451612903225806}",
+  "stats": "{"intensity":0,"outliers":26,"seenThrough":0,"flicker":17,"veils":0,"spikes":0,"mixed":0,"wallFill":264,"movRough":2.217411994934082,"movFlicker":0.06451612903225806}",
   "tracks": [
     "1 person 3.3126 1.3796",
   ],
@@ -23,7 +23,7 @@ exports[`golden pipeline output > default config 1`] = `
   "layerBias": "d1f78bbb",
   "out": "8bb0c703",
   "seesWall": "86759412",
-  "stats": "{"intensity":0,"outliers":0,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":264,"movRough":1.9271671772003174,"movFlicker":0.06451612903225806}",
+  "stats": "{"intensity":0,"outliers":0,"seenThrough":0,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":264,"movRough":1.9271671772003174,"movFlicker":0.06451612903225806}",
   "tracks": [
     "1 person 3.3126 1.3796",
   ],
@@ -38,7 +38,7 @@ exports[`golden pipeline output > intensity, cells on, walls off 1`] = `
   "layerBias": "6f84e03c",
   "out": "a2c6184d",
   "seesWall": "3319431d",
-  "stats": "{"intensity":118,"outliers":0,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":0,"movRough":4.720479249954224,"movFlicker":0.06353591160220995}",
+  "stats": "{"intensity":118,"outliers":0,"seenThrough":0,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":0,"movRough":4.720479249954224,"movFlicker":0.06353591160220995}",
   "tracks": [
     "1 person 3.3126 1.3798",
   ],
@@ -53,7 +53,7 @@ exports[`golden pipeline output > preset off 1`] = `
   "layerBias": "3ad73145",
   "out": "08319f0a",
   "seesWall": "3319431d",
-  "stats": "{"intensity":0,"outliers":0,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":0,"movRough":null,"movFlicker":null}",
+  "stats": "{"intensity":0,"outliers":0,"seenThrough":0,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":0,"movRough":null,"movFlicker":null}",
   "tracks": [
     "1 person 3.3126 1.3796",
   ],
@@ -68,7 +68,7 @@ exports[`golden pipeline output > preset strong 1`] = `
   "layerBias": "71ebbe0e",
   "out": "51e805d9",
   "seesWall": "c31ec21e",
-  "stats": "{"intensity":0,"outliers":24,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":264,"movRough":1.8971562385559082,"movFlicker":0.06451612903225806}",
+  "stats": "{"intensity":0,"outliers":24,"seenThrough":0,"flicker":0,"veils":0,"spikes":0,"mixed":0,"wallFill":264,"movRough":1.8971562385559082,"movFlicker":0.06451612903225806}",
   "tracks": [
     "1 person 3.3126 1.3796",
   ],

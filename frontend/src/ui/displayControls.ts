@@ -4,7 +4,7 @@ import type { Store } from "../config/storage";
 import { turboGradientCss } from "../core/colors";
 import type { Mount } from "../core/types";
 import type { ColorBy, Geometry } from "../render/geometry";
-import type { DrawMode } from "../render/scene3d";
+import type { DrawMode, GridStyle } from "../render/scene3d";
 import { $ } from "./dom";
 import { MAX_RANGE, OBJECT_TOGGLES, saveUi, type UiSettings } from "./settings";
 
@@ -27,11 +27,17 @@ export class DisplayControls {
     sel("colorBy", v => { ui.colorBy = v as ColorBy; this.showLegend(); }, ui.colorBy);
     sel("layerSel", v => { ui.layer = +v; }, "-1");
     sel("mount", v => events.mount(v as Mount), ui.mount);
+    const grid = $<HTMLSelectElement>("gridStyle");
+    grid.value = ui.gridStyle;
+    grid.onchange = () => { ui.gridStyle = grid.value as GridStyle; saveUi(store, ui, "gridStyle"); events.maxRange(); };
     this.showLegend();
     $("legend").style.background = turboGradientCss();
     const fill = $<HTMLInputElement>("fillWalls");
     fill.checked = ui.fillWalls;
     fill.onchange = () => { ui.fillWalls = fill.checked; saveUi(store, ui, "fillWalls"); events.rebuild(false); };
+    const merge = $<HTMLInputElement>("mergeSurfaces");
+    merge.checked = ui.mergeSurfaces;
+    merge.onchange = () => { ui.mergeSurfaces = merge.checked; saveUi(store, ui, "mergeSurfaces"); events.rebuild(false); };
     const size = $<HTMLInputElement>("size");
     size.oninput = () => { ui.pointSize = +size.value; $("sizeVal").textContent = `${ui.pointSize} px`; events.pointSize(); };
     const range = $<HTMLInputElement>("range");
@@ -64,6 +70,9 @@ export class DisplayControls {
   /** "walls behind moving objects" only with remembered walls on */
   sync(wallsOn: boolean): void { $("fillWalls").closest(".row")!.toggleAttribute("hidden", !wallsOn); }
 
+  /** "one wall where sensors overlap" only with several sensors */
+  setMulti(multi: boolean): void { $("mergeSurfaces").closest(".row")!.toggleAttribute("hidden", !multi); }
+
   /** the colour legend: the value range of the current colouring, or counts for the classes */
   legend(geo: Geometry, cellsOn: boolean): void {
     const by = this.ui.colorBy, isArea = by === "area", isCell = by === "cell";
@@ -74,13 +83,13 @@ export class DisplayControls {
     } else if (isCell) {
       $("legMin").textContent = cellsOn ? "one colour per depth slot" : "radial cells are off"; $("legMax").textContent = "grey: none";
     } else {
-      const unit = { rssi: "", dist: " m", height: " m", layer: "", uniform: "", noise: " mm", conf: "", area: "", cell: "" }[by];
-      const fmt = (v: number) => by === "dist" || by === "height" ? v.toFixed(1) : by === "conf" ? v.toFixed(2) : String(Math.round(v));
+      const unit = { rssi: "", dist: " m", mainDist: " m", height: " m", layer: "", uniform: "", noise: " mm", conf: "", area: "", cell: "", sensor: "" }[by];
+      const fmt = (v: number) => by === "dist" || by === "mainDist" || by === "height" ? v.toFixed(1) : by === "conf" ? v.toFixed(2) : String(Math.round(v));
       $("legMin").textContent = fmt(geo.lo) + unit; $("legMax").textContent = fmt(geo.hi) + unit;
     }
   }
 
-  private showLegend(): void { $("legendBox").classList.toggle("hidden", this.ui.colorBy === "uniform"); }
+  private showLegend(): void { $("legendBox").classList.toggle("hidden", this.ui.colorBy === "uniform" || this.ui.colorBy === "sensor"); }
 
   /** "dim background" only does something with highlighting on */
   private syncDim(): void {

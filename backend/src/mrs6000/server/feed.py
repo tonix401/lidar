@@ -10,7 +10,6 @@ class Feed:
         self.frame_id = 0
         self.data = b""
         self.meta: dict = {}
-        self.status: dict = {}           # latest REST device values (see status.py)
 
     def publish(self, data: bytes, meta: dict):
         with self.cond:

@@ -119,3 +119,29 @@ describe("geometry", () => {
     expect(Array.from(off.col.subarray(0, 3))).toEqual(rgb(3));
   });
 });
+
+describe("colour by distance to the main sensor", () => {
+  it("gives a spot the same colour whichever sensor saw it", async () => {
+    const { RIG3, ROOM, scanFrame, simMeta } = await import("./helpers/rig");
+    const { apply, invert } = await import("../src/fusion/pose");
+    const [a, b] = RIG3, main = a.pose.t, range: [number, number] = [1, 9];
+    const built = [a, b].map(s => {
+      const p = new Processor(defaultConfig());
+      p.ingest(scanFrame({ ...s, noise: 0 }, { ...ROOM, people: () => [] }, 0), simMeta(s, 0));
+      const g = p.grid!, geo = buildGeometry(g, g.out, createGeometry(g.N), { ...opts, colorBy: "mainDist", origin: apply(invert(s.pose), main), range });
+      const pts: { w: number[]; c: number[] }[] = [];
+      for (let k = 0; k < geo.np; k++) { const i = geo.pIdx[k]; if (i < g.N) pts.push({ w: apply(s.pose, geo.pos.subarray(3 * i, 3 * i + 3)), c: Array.from(geo.col.subarray(3 * i, 3 * i + 3)) }); }
+      return { geo, pts };
+    });
+    expect([built[0].geo.lo, built[0].geo.hi, built[1].geo.lo, built[1].geo.hi]).toEqual([1, 9, 1, 9]);   // one scale
+    let shared = 0, worst = 0;
+    for (const q of built[1].pts.filter((_, k) => k % 7 === 0)) {
+      const near = built[0].pts.find(p => Math.hypot(p.w[0] - q.w[0], p.w[1] - q.w[1], p.w[2] - q.w[2]) < 0.02);
+      if (!near) continue;
+      shared++;
+      worst = Math.max(worst, ...near.c.map((v, k) => Math.abs(v - q.c[k])));
+    }
+    expect(shared).toBeGreaterThan(20);
+    expect(worst).toBeLessThan(0.03);                 // 2 cm apart on a 8 m scale: the same colour
+  });
+});

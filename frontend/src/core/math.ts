@@ -23,16 +23,19 @@ export function smallestEigenvector(xx: number, xy: number, xz: number, yy: numb
   const r = Math.max(-1, Math.min(1, (b11 * (b22 * b33 - b23 * b23) - b12 * (b12 * b33 - b23 * b13) + b13 * (b12 * b23 - b22 * b13)) / 2));
   const phi = Math.acos(r) / 3;
   const lam = q + 2 * p * Math.cos(phi + 2 * Math.PI / 3);          // smallest eigenvalue
-  const r0 = [xx - lam, xy, xz], r1 = [xy, yy - lam, yz], r2 = [xz, yz, zz - lam];
-  const cr = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  let best: number[] | null = null, bn = 0;
-  for (const c of [cr(r0, r1), cr(r0, r2), cr(r1, r2)]) {
-    const n = c[0] * c[0] + c[1] * c[1] + c[2] * c[2];
-    if (n > bn) { bn = n; best = c; }
-  }
-  if (!best || bn < 1e-24) return -1;
+  // the cross products of the rows of A − λI (no arrays: called once per beam by several stages)
+  const a0 = xx - lam, a1 = yy - lam, a2 = zz - lam;
+  const c0 = xy * yz - xz * a1, c1 = xz * xy - a0 * yz, c2 = a0 * a1 - xy * xy;            // r0 × r1
+  const d0 = xy * a2 - xz * yz, d1 = xz * xz - a0 * a2, d2 = a0 * yz - xy * xz;            // r0 × r2
+  const e0 = a1 * a2 - yz * yz, e1 = yz * xz - xy * a2, e2 = xy * yz - a1 * xz;            // r1 × r2
+  const nc = c0 * c0 + c1 * c1 + c2 * c2, nd = d0 * d0 + d1 * d1 + d2 * d2, ne = e0 * e0 + e1 * e1 + e2 * e2;
+  let bn = 0, b0 = 0, b1 = 0, b2 = 0;
+  if (nc > bn) { bn = nc; b0 = c0; b1 = c1; b2 = c2; }
+  if (nd > bn) { bn = nd; b0 = d0; b1 = d1; b2 = d2; }
+  if (ne > bn) { bn = ne; b0 = e0; b1 = e1; b2 = e2; }
+  if (bn < 1e-24) return -1;
   const s = 1 / Math.sqrt(bn);
-  out[0] = best[0] * s; out[1] = best[1] * s; out[2] = best[2] * s;
+  out[0] = b0 * s; out[1] = b1 * s; out[2] = b2 * s;
   return lam / Math.max(1e-12, xx + yy + zz);
 }
 

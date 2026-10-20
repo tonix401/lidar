@@ -12,7 +12,7 @@ import type { FrameMeta, RGB, ThemeColors } from "../core/types";
 import { boxCorners, trackLabel, type Track } from "../objects/tracker";
 import type { Grid } from "../pipeline/grid";
 import type { Geometry } from "./geometry";
-import { drawParts, type DrawMode, type OverlayOptions } from "./scene3d";
+import { drawParts, squareStep, type DrawMode, type GridStyle, type OverlayOptions } from "./scene3d";
 
 export type View2DMode = "top" | "image";
 
@@ -26,6 +26,7 @@ export interface View2DData {
   pointSize: number;
   maxRange: number;
   byDistance: boolean;                // range image: colour by distance (when the colour mode is uniform)
+  gridStyle: GridStyle;               // map: range rings or a square grid
   upsideDown: boolean;                // sensor on its head: the range image's rows flip
   tint: (i: number, rgb: RGB) => RGB;
   follow?: Track;
@@ -120,6 +121,27 @@ export class View2D {
     } else this.renderImage(d);
   }
 
+  /** the map's square grid: lines of constant x (forward) and y (left) in the sensor's frame, over what is on
+   *  screen (out to maxR); the spacing follows the zoom (at least 12 px), every 5th / 2nd line stronger, with
+   *  labels along the sensor's axes */
+  private squareGrid(toX: (y: number) => number, toY: (x: number) => number, maxR: number): void {
+    const ctx = this.ctx, s = this.top.scale, { cx, cy } = this.top;
+    let { step, major } = squareStep(maxR);
+    while (step * s < 12) { step *= major === 5 ? 5 : 2; major = 2; }
+    const lo = (v: number) => Math.max(-maxR, Math.floor(v / step) * step), hi = (v: number) => Math.min(maxR, Math.ceil(v / step) * step);
+    const x0 = lo((cy - innerHeight) / s), x1 = hi(cy / s), y0 = lo((cx - innerWidth) / s), y1 = hi(cx / s);   // visible area (m)
+    for (let x = x0; x <= x1 + 1e-9; x += step) {
+      ctx.strokeStyle = Math.round(x / step) % major === 0 ? this.c.grid2 : this.c.grid;
+      ctx.beginPath(); ctx.moveTo(toX(y0), toY(x)); ctx.lineTo(toX(y1), toY(x)); ctx.stroke();
+      if (x > 0 && Math.round(x / step) % major === 0) { ctx.fillStyle = this.c.axis; ctx.fillText(`${+x.toFixed(1)} m`, cx + 4, toY(x) - 3); }
+    }
+    for (let y = y0; y <= y1 + 1e-9; y += step) {
+      ctx.strokeStyle = Math.round(y / step) % major === 0 ? this.c.grid2 : this.c.grid;
+      ctx.beginPath(); ctx.moveTo(toX(y), toY(x0)); ctx.lineTo(toX(y), toY(x1)); ctx.stroke();
+      if (y !== 0 && Math.round(y / step) % major === 0) { ctx.fillStyle = this.c.axis; ctx.fillText(`${+y.toFixed(1)} m`, toX(y) + 3, cy - 4); }
+    }
+  }
+
   private niceStep(minPx: number): number {
     for (const s of [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]) if (s * this.top.scale >= minPx) return s;
     return 200;
@@ -130,7 +152,8 @@ export class View2D {
     const toX = (y: number) => cx - y * s, toY = (x: number) => cy - x * s;
     const maxR = Math.min(d.maxRange, 250), step = this.niceStep(60);
     ctx.lineWidth = 1; ctx.font = "11px system-ui"; ctx.textAlign = "left";
-    for (let r = step; r <= maxR; r += step) {
+    if (d.gridStyle === "square") this.squareGrid(toX, toY, maxR);
+    else for (let r = step; r <= maxR; r += step) {
       ctx.strokeStyle = Math.round(r / step) % 2 === 0 ? this.c.grid2 : this.c.grid;
       ctx.beginPath(); ctx.arc(cx, cy, r * s, -Math.PI / 2 - 70 * DEG, -Math.PI / 2 + 70 * DEG); ctx.stroke();
       ctx.fillStyle = this.c.axis; ctx.fillText(`${+r.toFixed(1)} m`, cx + 4, cy - r * s - 3);

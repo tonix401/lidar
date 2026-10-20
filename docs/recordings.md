@@ -13,6 +13,21 @@ These run server-side (`backend/src/mrs6000/recording/` for the format, reading 
 
 The HTTP endpoints for all of this are in [api.md](api.md).
 
+## Sessions
+
+With several live sensors, **● Record** records all of them into one folder (`backend/src/mrs6000/recording/session.py`):
+
+```text
+rec_20261020_120000/
+  session.json      {"sensors": [{"name": "a", "file": "a.tpc.zstd"}, ...], "rig": {...}, "created": t, "complete": bool}
+  a.tpc.zstd  b.tpc.zstd  ...
+```
+
+- Each file is an ordinary recording (its header also names its `sensor`); the scan times of all of them are on one clock ([multisensor.md](multisensor.md#time-one-clock-for-all-sensors)).
+- `rig` is the rig at record time, so a replay is self-contained; calibrating during a replay stores the new poses there.
+- **Replay** merges the files into one timeline (frame k = the k-th scan in time over all sensors) and publishes each scan to its sensor's feed. While a session is still being recorded (`complete` false), only scans up to the last time every sensor has reached are shown, so frames are only ever appended.
+- The list shows a session with its sensor count; Download gives a `.zip` of the folder. One sensor still records a plain file.
+
 ## Storage
 
 `recordings/` is gitignored. GitHub rejects files over 100 MB, and a 132 MB recording once blocked a push. The walk recording used for tuning is `recordings/walk_20261014.mrsstream` (rename it to `.tpc` to replay it); it is also on the `backup-before-rewrite` branch.

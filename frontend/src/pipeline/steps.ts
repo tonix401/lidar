@@ -1,10 +1,10 @@
 // The processing pipeline, in order. Each step is a thin call into its stage's module; Processor runs them in
 // three phases:
 //  • ingest: once per new scan — intensity filter → layer calibration → motion detection (on the unfiltered
-//    scan) → outlier rejection → temporal model → layer-calibration learning → objects → radial cells;
+//    scan) → outlier rejection → cross-check with other sensors → temporal model → layer-calibration learning → objects → radial cells;
 //  • refine: the spatial stages on the current temporal state → grid.out, also re-run after a settings
 //    change — history filter → bilateral → moving-area smoothing → radial cells → planes → clean outlines
-//    → walls drawn behind moving objects → metrics;
+//    → cross-check of the output → walls drawn behind moving objects → metrics;
 //  • learn: once per new scan, after refine, from the final ranges — remembered walls, flicker metric.
 // A new stage: its module (StageDef, state, functions), a step here, and its entry in config/stages.ts.
 import type { Config } from "../config/config";
@@ -12,6 +12,7 @@ import type { RemovedStat } from "../config/types";
 import type { FrameMeta } from "../core/types";
 import type { ObjectDetector } from "../objects/detector";
 import { bilateral } from "./bilateral";
+import { crossCheck, type OtherSensor } from "./crosscheck";
 import { Cells } from "./cells";
 import { dynSmooth } from "./dynsmooth";
 import type { Grid } from "./grid";
@@ -46,6 +47,8 @@ export interface StepContext {
   cells: Cells | null;
   scans: number;                       // scans with layer-calibration learning on
   onLayerBias: ((bias: Float32Array) => void) | null;
+  /** the rig's other sensors (empty with one sensor) */
+  readonly others: readonly OtherSensor[];
   /** the object detector's empty-scene ranges, once learned */
   background(): Float32Array | null;
 }
@@ -69,6 +72,7 @@ export const PIPELINE: readonly Step[] = [
   } },
   { name: "adaptive", phase: "ingest", run: (c, g) => { detectMotion(g, g.work, c.cfg); } },
   { name: "outlier", phase: "ingest", run: (c, g) => { c.stats.outliers = rejectOutliers(g, g.work, g.raw, c.cfg); } },   // relaxed inside moving areas
+  { name: "crosscheck", phase: "ingest", run: (c, g) => { c.stats.seenThrough = crossCheck(g, g.raw, c.others, c.cfg); } },
   { name: "temporal", phase: "ingest", run: (c, g) => { temporalUpdate(g, g.raw, c.cfg); } },
   { name: "layercal learning", phase: "ingest", run: (c, g) => {
     const lc = c.cfg.layercal;
@@ -99,6 +103,9 @@ export const PIPELINE: readonly Step[] = [
     snapToWall(g, g.out, c.cfg, scan);
     frontMask(g, g.out, c.background(), c.cfg, g.front);
     c.stats.mixed = dropMixed(g, g.out, g.front, c.cfg);
+  } },
+  { name: "crosscheck out", phase: "refine", run: (c, g) => {
+    if (c.others.length) c.stats.seenThrough += crossCheck(g, g.out, c.others, c.cfg, false);
   } },
   { name: "wall fill", phase: "refine", run: (c, g) => { c.stats.wallFill = wallFill(g, g.out, c.background(), c.cfg, g.fill); } },
   { name: "roughness", phase: "refine", run: (c, g) => { c.stats.movRough = movingRoughness(g, g.out, c.cfg); } },

@@ -1,6 +1,6 @@
 """The recording format: temporal point clouds.
 
-x.tpc: one JSON header line {layers, beams, start_azimuth_deg, step_deg, elev[layers*beams], upside_down?},
+x.tpc: one JSON header line {layers, beams, start_azimuth_deg, step_deg, elev[layers*beams], upside_down?, sensor?},
 then fixed-size scans: float64 unix time, uint16 raw distance (units of 12.5 mm, 0 = invalid), uint16 rssi
 — layer-major, little endian. Scan k sits at header_end + k * frame_size. ~88 kB per scan (~53 MB per
 minute at 10 Hz).
@@ -31,12 +31,14 @@ INDEX_TAG = b"TPC1"
 Frame = tuple[float, bytes, bytes]   # time, distances, rssi (uint16 bytes)
 
 
-def stream_header(scan: Scan, upside_down: bool | None = None) -> bytes:
+def stream_header(scan: Scan, upside_down: bool | None = None, sensor: str | None = None) -> bytes:
     L = scan.layers
     hdr = {"layers": len(L), "beams": L[0].beam_count, "start_azimuth_deg": L[0].start_azimuth_deg,
            "step_deg": L[0].step_deg, "elev": [e for l in L for e in l.elevations_deg()]}
     if upside_down is not None:
         hdr["upside_down"] = upside_down
+    if sensor is not None:
+        hdr["sensor"] = sensor
     return (json.dumps(hdr) + "\n").encode()
 
 

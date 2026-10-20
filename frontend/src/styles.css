@@ -176,3 +176,5 @@ details.stage button.reset { margin-top: 8px; font-size: 12px; }
 #panel.min #panelResize { display: none; }
 @media (max-width: 600px) { #panelResize { display: none; } }
 .row select, .row input[type=range] { width: 55%; max-width: 260px; }
+#sensorList .orow input { margin: 0 2px 0 4px; }
+.calrow { font-size: 12px; margin: 3px 0; } .calrow .warn { color: var(--warn); font-size: 11px; }

@@ -4,7 +4,7 @@ import type { ViewMode } from "../config/config";
 import { KEYS, type Store } from "../config/storage";
 import type { Mount } from "../core/types";
 import type { ColorBy } from "../render/geometry";
-import type { DrawMode } from "../render/scene3d";
+import type { DrawMode, GridStyle } from "../render/scene3d";
 
 export const MAX_RANGE: [number, number] = [1, 250];
 /** object overlay checkboxes in the panel → their setting */
@@ -15,11 +15,13 @@ export interface UiSettings {
   colorBy: ColorBy; layer: number; maxRange: number; mount: Mount; paused: boolean; draw: DrawMode; pointSize: number;
   view: ViewMode; highlight: boolean; dimBg: boolean; boxes: boolean; labels: boolean; trails: boolean; follow: boolean;
   fillWalls: boolean;
+  mergeSurfaces: boolean;      // several sensors: one wall where they overlap
+  gridStyle: GridStyle;        // the 3D view's and the map's distance guides
 }
 
 export const defaultUi = (): UiSettings => ({
   colorBy: "dist", layer: -1, maxRange: 60, mount: "upright", paused: false, draw: "surface+points", pointSize: 1, view: "3d",
-  highlight: true, dimBg: true, boxes: true, labels: true, trails: true, follow: false, fillWalls: true,
+  highlight: true, dimBg: true, boxes: true, labels: true, trails: true, follow: false, fillWalls: true, mergeSurfaces: true, gridStyle: "rings",
 });
 
 /** the stored settings; `mountChosen`: the user picked the mount (otherwise it follows the device / recording) */
@@ -31,6 +33,9 @@ export function loadUi(store: Store): { ui: UiSettings; mountChosen: boolean } {
   const v = store.get(KEYS.view);
   if (v === "3d" || v === "top" || v === "image") ui.view = v;
   if (store.get(KEYS.fillWalls) === "0") ui.fillWalls = false;
+  if (store.get(KEYS.mergeSurfaces) === "0") ui.mergeSurfaces = false;
+  const gs = store.get(KEYS.gridStyle);
+  if (gs === "rings" || gs === "square") ui.gridStyle = gs;
   const r = Number(store.get(KEYS.maxRange));
   if (r >= MAX_RANGE[0] && r <= MAX_RANGE[1]) ui.maxRange = r;
   for (const key of Object.values(OBJECT_TOGGLES)) {
@@ -41,10 +46,12 @@ export function loadUi(store: Store): { ui: UiSettings; mountChosen: boolean } {
 }
 
 /** remember one setting (only those listed here are remembered) */
-export function saveUi(store: Store, ui: UiSettings, key: "mount" | "view" | "fillWalls" | "maxRange" | ObjectToggle): void {
+export function saveUi(store: Store, ui: UiSettings, key: "mount" | "view" | "fillWalls" | "mergeSurfaces" | "gridStyle" | "maxRange" | ObjectToggle): void {
   if (key === "mount") store.set(KEYS.mount, ui.mount);
   else if (key === "view") store.set(KEYS.view, ui.view);
   else if (key === "fillWalls") store.set(KEYS.fillWalls, ui.fillWalls ? "1" : "0");
+  else if (key === "mergeSurfaces") store.set(KEYS.mergeSurfaces, ui.mergeSurfaces ? "1" : "0");
+  else if (key === "gridStyle") store.set(KEYS.gridStyle, ui.gridStyle);
   else if (key === "maxRange") store.set(KEYS.maxRange, String(ui.maxRange));
   else store.set(KEYS.objectToggle(key), ui[key] ? "1" : "0");
 }

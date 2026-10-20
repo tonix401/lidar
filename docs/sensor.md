@@ -44,6 +44,10 @@ The dimensions come from the MRS6000 operating instructions, figure 20 (Maßzeic
   - `mEEwriteall` saves permanently; `sMN Run` leaves config mode.
   - Parser pitfall (fixed): after each channel, `i += 6 + n`.
 
+## Several sensors
+
+See [multisensor.md](multisensor.md): each needs its own IP, should stand within 10° of level and see some floor. Cross-talk between sensors facing each other has not been measured yet.
+
 ## Quirks
 
 - The sensor hung once (HTTP and CoLa stuck in FIN-WAIT-2). A power cycle fixed it.

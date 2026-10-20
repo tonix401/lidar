@@ -10,8 +10,10 @@ from pathlib import Path
 from ..errors import describe_error
 from .format import CHUNK_FRAMES, LEVEL, stream_chunk, zstd_entry
 from .reader import Recording
+from .session import is_session, open_recording
 
 NAME_RE = re.compile(r"^[\w.-]+\.tpc(\.zstd)?$")
+SESSION_RE = re.compile(r"^\w[\w-]*$")             # session folders: no dots, so never a file name
 
 
 def convert(src: str | Path, dst: str | Path, compress: bool = True, level: int = LEVEL) -> int:
@@ -43,21 +45,25 @@ def list_recordings(rec_dir: Path) -> list[dict]:
     out = []
     if not Path(rec_dir).is_dir():
         return out
-    files = [p for p in Path(rec_dir).iterdir() if NAME_RE.match(p.name) and p.is_file()]
-    for p in sorted(files, key=lambda p: p.stat().st_mtime, reverse=True):
+    entries = [p for p in Path(rec_dir).iterdir()
+               if (NAME_RE.match(p.name) and p.is_file()) or (SESSION_RE.match(p.name) and is_session(p))]
+    for p in sorted(entries, key=lambda p: p.stat().st_mtime, reverse=True):
         try:
-            with Recording(p) as r:
+            with open_recording(p) as r:
                 out.append(r.info())
         except Exception as e:
-            out.append({"name": p.name, "bytes": p.stat().st_size, "error": describe_error(e)})
+            size = sum(f.stat().st_size for f in p.iterdir()) if p.is_dir() else p.stat().st_size
+            out.append({"name": p.name, "bytes": size, "error": describe_error(e)})
     return out
 
 
 def recording_path(rec_dir: Path, name: str) -> Path:
-    """Resolve a recording name from the API; only plain *.tpc / *.tpc.zstd names inside rec_dir."""
-    if not NAME_RE.match(name or ""):
+    """Resolve a recording name from the API: a plain *.tpc / *.tpc.zstd file or a session folder inside
+    rec_dir."""
+    file = bool(NAME_RE.match(name or ""))
+    if not file and not SESSION_RE.match(name or ""):
         raise ValueError("invalid recording name")
     p = Path(rec_dir) / name
-    if not p.is_file():
+    if not (p.is_file() if file else is_session(p)):
         raise FileNotFoundError(name)
     return p

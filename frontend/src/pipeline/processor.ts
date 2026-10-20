@@ -5,6 +5,7 @@ import type { Config } from "../config/config";
 import type { FrameMeta, Mount } from "../core/types";
 import { ObjectDetector } from "../objects/detector";
 import type { Cells } from "./cells";
+import type { OtherSensor } from "./crosscheck";
 import { createGrid, resetHistory, type Grid } from "./grid";
 import { removeUnobservable } from "./layercal";
 import { FlickerMeter } from "./metrics";
@@ -25,8 +26,10 @@ export class Processor implements StepContext {
   flickerMeter: FlickerMeter | null = null;
   layerBias = new Float32Array(24);
   rssiHist: Uint32Array<ArrayBufferLike> = new Uint32Array(50);
-  stats: FrameStats = { intensity: 0, outliers: 0, flicker: 0, veils: 0, spikes: 0, mixed: 0, wallFill: 0, ingestMs: 0, refineMs: 0, movRough: NaN, movFlicker: NaN };
+  stats: FrameStats = { intensity: 0, outliers: 0, seenThrough: 0, flicker: 0, veils: 0, spikes: 0, mixed: 0, wallFill: 0, ingestMs: 0, refineMs: 0, movRough: NaN, movFlicker: NaN };
   scans = 0;
+  /** the rig's other sensors, for the cross-check (set before each ingest; empty with one sensor) */
+  others: OtherSensor[] = [];
   /** called after a layer-calibration update (e.g. to persist the offsets) */
   onLayerBias: ((bias: Float32Array) => void) | null = null;
 
@@ -47,7 +50,7 @@ export class Processor implements StepContext {
     g.rssi.set(data.subarray(N, 2 * N));
     g.elev.set(data.subarray(2 * N, 3 * N));
     g.rawIn.set(data.subarray(0, N));
-    updateRays(g, meta.start_azimuth_deg, meta.step_deg, this.mount);   // ~1 ms; elevations may differ per recording
+    updateRays(g, meta.start_azimuth_deg, meta.step_deg, this.mount);   // only when the geometry changed
     g.frames = Math.min(g.frames + 1, 32);
     this.stats = { ...this.stats };
     for (const s of INGEST) s.run(this, g, true);

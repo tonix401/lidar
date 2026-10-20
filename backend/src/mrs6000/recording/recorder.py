@@ -26,6 +26,7 @@ class Recorder:
         self.scans = 0
         self.t0 = 0.0
         self.upside_down: bool | None = None
+        self.sensor: str | None = None           # written into the header (multi-sensor sessions)
         self.error = ""                          # also set by the writer thread
         self.bytes = 0                           # written so far
         self.n = 0                               # values per scan, from the first scan
@@ -66,7 +67,7 @@ class Recorder:
                 d, r = frame_values(scan)
                 if not self.n:
                     self.n = len(d) // 2
-                    self.queue.put(stream_header(scan, self.upside_down))
+                    self.queue.put(stream_header(scan, self.upside_down, self.sensor))
                 elif len(d) != 2 * self.n or len(r) != 2 * self.n:
                     raise ValueError("scan layout changed")
                 self.frames.append((ts, d, r))

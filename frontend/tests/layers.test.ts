@@ -10,9 +10,10 @@ const ALLOWED: Record<string, string[]> = {
   config: ["core", "pipeline", "objects"],          // config, pipeline and objects form the processing model
   pipeline: ["core", "config", "objects"],
   objects: ["core", "config", "pipeline"],
-  render: ["core", "config", "pipeline", "objects"],
+  fusion: ["core", "config", "pipeline", "objects"],  // several sensors: on top of the processing model
+  render: ["core", "config", "pipeline", "objects", "fusion"],
   api: ["core"],
-  ui: ["core", "config", "pipeline", "objects", "render", "api:type"],   // the API only as types (calls go through callbacks)
+  ui: ["core", "config", "pipeline", "objects", "fusion", "render", "api:type"],   // the API only as types (calls go through callbacks)
 };
 
 function files(dir: string): string[] {

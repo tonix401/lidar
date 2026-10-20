@@ -8,6 +8,7 @@ import { historyStage, type HistoryConfig } from "../pipeline/history";
 import { intensityStage, type IntensityConfig } from "../pipeline/intensity";
 import { layercalStage, type LayercalConfig } from "../pipeline/layercal";
 import { adaptiveStage, type AdaptiveConfig } from "../pipeline/motion";
+import { crosscheckStage, type CrosscheckConfig } from "../pipeline/crosscheck";
 import { outlierStage, type OutlierConfig } from "../pipeline/outlier";
 import { outlineStage, type OutlineConfig } from "../pipeline/outline";
 import { planesStage, type PlanesConfig } from "../pipeline/planes";
@@ -22,6 +23,7 @@ export interface Config {
   layercal: LayercalConfig;
   adaptive: AdaptiveConfig;
   outlier: OutlierConfig;
+  crosscheck: CrosscheckConfig;
   temporal: TemporalConfig;
   history: HistoryConfig;
   spatial: SpatialConfig;
@@ -36,7 +38,7 @@ export interface Config {
 export type StageKey = keyof Config;
 
 export const STAGES: StageDef[] = [
-  intensityStage, layercalStage, adaptiveStage, outlierStage, temporalStage, historyStage, spatialStage, dynamicStage,
+  intensityStage, layercalStage, adaptiveStage, outlierStage, crosscheckStage, temporalStage, historyStage, spatialStage, dynamicStage,
   cellsStage, planesStage, objectsStage, outlineStage, wallsStage, meshStage,
 ];
 

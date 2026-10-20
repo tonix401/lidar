@@ -15,7 +15,7 @@ import type { StageDef } from "../config/types";
 import { DEG } from "../core/math";
 import { fgTol } from "../objects/background";
 import type { Grid } from "./grid";
-import { ESTABLISHED, isMoving } from "./motion";
+import { ESTABLISHED } from "./motion";
 
 export type DynamicConfig = { on: boolean; radius: number; minPts: number; gap: number };
 
@@ -39,19 +39,28 @@ export const MAX_WB = 12, MAX_WL = 2;
 const backgroundOf = (g: Grid, bg: Float32Array | null, i: number): number =>
   bg ? bg[i] : g.altN[i] >= ESTABLISHED ? g.alt[i] : 0;
 
+/** per beam, once per scan: may it count as a neighbour (1: a return, moving or in front of the empty scene) */
+let usable = new Uint8Array(0);
+
 /** smooths moving beams of `src` into `dst` (other beams untouched); returns the number of veil beams dropped */
 export function dynSmooth(g: Grid, src: Float32Array, dst: Float32Array, bg: Float32Array | null, stepDeg: number,
                           cfg: Config): number {
-  const c = cfg.dynamic, { L, B, rayX, rayY, rayZ, elev, conf, noiseVar } = g;
+  const c = cfg.dynamic, { L, B, N, rayX, rayY, rayZ, elev, conf, noiseVar, motionHold } = g;
   if (!c.on || !cfg.adaptive.on) return 0;
+  let any = false;
+  for (let i = 0; i < N && !any; i++) any = motionHold[i] > 0 && src[i] > 0;
+  if (!any) return 0;
   const stepRad = Math.max(1e-4, Math.abs(stepDeg) * DEG);
   const layerStepRad = L > 1 ? Math.max(1e-4, Math.abs(elev[B] - elev[0]) * DEG) : 1;
   const sLat = 2 * (c.radius / 2) ** 2, cutLat = c.radius ** 2, floor = cfg.temporal.noiseFloor;
   const front = (j: number, v: number) => { const b = backgroundOf(g, bg, j); return b > 0 && v < b - fgTol(cfg.objects, noiseVar[j], b); };
+  if (usable.length < N) usable = new Uint8Array(N);
+  const ok = usable;
+  for (let j = 0; j < N; j++) { const v = src[j]; ok[j] = v > 0 && (motionHold[j] > 0 || front(j, v)) ? 1 : 0; }
   let veils = 0;
   for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
     const i = l * B + b, d = src[i];
-    if (d <= 0 || !isMoving(g, i, cfg)) continue;
+    if (d <= 0 || !(motionHold[i] > 0)) continue;             // moving beams only (isMoving, adaptive is on)
     const sR = 2 * Math.max(floor, Math.sqrt(noiseVar[i])), sAlong = 2 * sR * sR, cutAlong = Math.min(c.gap, 3 * sR);
     const between = (p: number, q: number) => {
       const u = src[p], v = src[q], near = Math.min(u, v), far = Math.max(u, v);
@@ -64,12 +73,12 @@ export function dynSmooth(g: Grid, src: Float32Array, dst: Float32Array, bg: Flo
     const wb = Math.min(MAX_WB, Math.max(1, Math.ceil(c.radius / (d * stepRad))));
     const wl = Math.min(MAX_WL, Math.max(0, Math.ceil(c.radius / (d * layerStepRad))));
     const ux = rayX[i], uy = rayY[i], uz = rayZ[i], px = ux * d, py = uy * d, pz = uz * d;
+    const b0 = Math.max(0, b - wb), b1 = Math.min(B - 1, b + wb);
     let n = 0, ws = 0, sx = 0, sy = 0, sz = 0;
     for (let ll = Math.max(0, l - wl); ll <= Math.min(L - 1, l + wl); ll++)
-      for (let bb = Math.max(0, b - wb); bb <= Math.min(B - 1, b + wb); bb++) {
-        const j = ll * B + bb, v = src[j];
-        if (v <= 0 || (j !== i && !isMoving(g, j, cfg) && !front(j, v))) continue;
-        const x = rayX[j] * v, y = rayY[j] * v, z = rayZ[j] * v, dx = x - px, dy = y - py, dz = z - pz;
+      for (let j = ll * B + b0, je = ll * B + b1; j <= je; j++) {
+        if (!ok[j]) continue;                                 // i itself is moving: always usable
+        const v = src[j], x = rayX[j] * v, y = rayY[j] * v, z = rayZ[j] * v, dx = x - px, dy = y - py, dz = z - pz;
         const along = dx * ux + dy * uy + dz * uz, lat2 = dx * dx + dy * dy + dz * dz - along * along;
         if (lat2 > cutLat || Math.abs(along) > cutAlong) continue;
         const w = conf[j] * Math.exp(-lat2 / sLat - along * along / sAlong);

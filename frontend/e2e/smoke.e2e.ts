@@ -1,33 +1,28 @@
 // End-to-end: the real backend (offline, replaying a generated recording of a person walking past a
 // wall) serving the built frontend, driven in headless Chromium.
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { castRanges, elevations } from "../tests/helpers/scene";
+import { writeTpc } from "../tests/helpers/session";
 import { browserExecutable, pythonInVenv } from "./browser";
 
 const ROOT = resolve(process.cwd(), "..");
 const PYTHON = process.env.PYTHON ?? pythonInVenv(join(ROOT, "backend"));
 const L = 24, B = 301, STEP = 0.4;
 
-/** .tpc writer (format: backend/src/mrs6000/recording/format.py) */
+/** a person walking past a wall, again and again (format: tests/helpers/session.ts) */
 function writeRecording(path: string, scans: number): void {
   const hdr = { layers: L, beams: B, start_azimuth_deg: -60, step_deg: STEP, upside_down: false,
-                elev: elevations(L).flatMap(e => Array(B).fill(e)) };
-  const parts: Buffer[] = [Buffer.from(JSON.stringify(hdr) + "\n")];
-  for (let k = 0; k < scans; k++) {
+                elev: elevations(L).flatMap(e => Array<number>(B).fill(e)) };
+  writeTpc(path, hdr, Array.from({ length: scans }, (_, k): [number, Float32Array] => {
     const y = 1.5 - 0.06 * (k % 50);                                 // walks across, again and again
-    const d = castRanges({ L, B, step: STEP, noise: 0.01, seed: k + 1, objects: k < 20 ? [] : [{ x: 2.5, y, r: 0.22, z0: -1, z1: 0.9 }] });
-    const buf = Buffer.alloc(8 + 4 * L * B);
-    buf.writeDoubleLE(1000 + k * 0.1, 0);
-    for (let i = 0; i < L * B; i++) { buf.writeUInt16LE(Math.round(d[i] / 0.0125), 8 + 2 * i); buf.writeUInt16LE(100, 8 + 2 * L * B + 2 * i); }
-    parts.push(buf);
-  }
-  writeFileSync(path, Buffer.concat(parts));
+    return [1000 + k * 0.1, castRanges({ L, B, step: STEP, noise: 0.01, seed: k + 1, objects: k < 20 ? [] : [{ x: 2.5, y, r: 0.22, z0: -1, z1: 0.9 }] })];
+  }));
 }
 
 const freePort = () => new Promise<number>(res => { const s = createServer(); s.listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => res(p)); }); });

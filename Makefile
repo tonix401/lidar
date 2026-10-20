@@ -4,7 +4,7 @@ PYTHON  ?= python3
 PY      := backend/.venv/bin/python
 ARGS    ?=
 
-.PHONY: help check install browser build run dev test test-backend test-frontend test-e2e clean
+.PHONY: help check install browser build run dev test test-backend test-frontend test-e2e sim-session profile clean
 
 help:
 	@echo "make install        backend venv (editable, with dev extras) + frontend node_modules"
@@ -12,6 +12,8 @@ help:
 	@echo "make run            build the frontend, start the backend on http://localhost:8000 (ARGS='--replay ...')"
 	@echo "make dev            backend :8000 + Vite dev server with hot reload on http://localhost:5173"
 	@echo "make test           backend (pytest) + frontend (typecheck, vitest) + browser end-to-end test"
+	@echo "make sim-session    a simulated 3-sensor session in recordings/sim_rig3 (ARGS='folder seconds beams')"
+	@echo "make profile        ms per scan of every pipeline step, three simulated sensors (ARGS='beams scans')"
 	@echo "make clean          remove build output and test artifacts"
 
 install: backend/.venv/.installed frontend/node_modules/.installed
@@ -57,6 +59,14 @@ test-frontend: install
 
 test-e2e: build
 	cd frontend && npm run test:e2e
+
+sim-session: install
+	cd frontend && node node_modules/rolldown/bin/cli.mjs scripts/simulate-session.ts --platform node --format esm \
+	  -o node_modules/.cache/simulate-session.mjs --log-level warn && node node_modules/.cache/simulate-session.mjs $(ARGS)
+
+profile: install
+	cd frontend && node node_modules/rolldown/bin/cli.mjs scripts/profile-pipeline.ts --platform node --format esm \
+	  -o node_modules/.cache/profile-pipeline.mjs --log-level warn && node node_modules/.cache/profile-pipeline.mjs $(ARGS)
 
 clean:
 	rm -rf frontend/dist frontend/e2e/artifacts backend/.pytest_cache

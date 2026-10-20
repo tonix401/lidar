@@ -147,6 +147,15 @@ class Recording:
         dist = array("f", (x * (DIST_UNIT_MM / 1000) for x in d))
         return ts, dist.tobytes() + array("f", r).tobytes() + self.elev, sum(1 for x in d if x)
 
+    @property
+    def sensors(self) -> list[str]:
+        return [self.hdr.get("sensor") or "sensor"]
+
+    def frame(self, k: int) -> tuple[str, float, bytes, int, dict]:
+        """What replay publishes for frame k: sensor name, time, the encoded frame, valid points, header."""
+        ts, data, points = self.encoded(k)
+        return self.sensors[0], ts, data, points, self.hdr
+
     def info(self) -> dict:
         n = self.count
         dur = self.time(n - 1) - self.time(0) if n > 1 else 0.0

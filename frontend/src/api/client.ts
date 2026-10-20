@@ -1,5 +1,5 @@
 // Typed client for the backend API (see backend/src/mrs6000/server/app.py).
-import type { FrameMeta, RecordingInfo, ServerState, StatusResponse } from "../core/types";
+import type { FrameMeta, RecordingInfo, Rig, RigSensor, SensorInfo, ServerState, StatusResponse } from "../core/types";
 
 export type ControlAction = "play" | "pause" | "toggle" | "step" | "seek" | "speed" | "loop";
 
@@ -28,9 +28,11 @@ export class Api {
                                 body: body === undefined ? undefined : JSON.stringify(body) });
   }
 
-  /** long-poll: the newest frame with id > after (the server answers after ≤ 2 s even without one) */
-  async frame(after: number): Promise<Frame | null> {
-    const r = await this.fetchFn(`${this.base}/frame?after=${after}`, { cache: "no-store" });
+  /** long-poll: a sensor's newest frame with id > after (the server answers after ≤ 2 s even without one);
+   *  without `sensor`, the current source's first */
+  async frame(after: number, sensor?: string): Promise<Frame | null> {
+    const q = sensor === undefined ? "" : `&sensor=${encodeURIComponent(sensor)}`;
+    const r = await this.fetchFn(`${this.base}/frame?after=${after}${q}`, { cache: "no-store" });
     if (!r.ok) throw new ApiError(`HTTP ${r.status}`, r.status);
     const meta = JSON.parse(r.headers.get("X-Meta") || "{}") as FrameMeta;
     const buf = await r.arrayBuffer();
@@ -39,7 +41,13 @@ export class Api {
   }
 
   state(): Promise<ServerState> { return this.json("/state"); }
-  status(): Promise<StatusResponse> { return this.json("/status"); }
+  status(sensor?: string): Promise<StatusResponse> { return this.json(sensor === undefined ? "/status" : `/status?sensor=${encodeURIComponent(sensor)}`); }
+  sensors(): Promise<SensorInfo[]> { return this.json("/sensors"); }
+  rig(): Promise<Rig> { return this.json("/rig"); }
+  /** store calibration results (rig.json while live, the session while replaying one) */
+  putRig(sensors: Partial<RigSensor>[]): Promise<Rig> {
+    return this.json("/rig", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sensors }) });
+  }
   recordings(): Promise<RecordingInfo[]> { return this.json("/recordings"); }
   record(action: "start" | "stop"): Promise<ServerState> { return this.post("/record", { action }); }
   replay(file: string): Promise<ServerState> { return this.post("/replay", { file }); }

@@ -7,13 +7,18 @@ import { sameTol } from "../core/math";
 import type { RGB } from "../core/types";
 import type { Grid } from "../pipeline/grid";
 
-export type ColorBy = "uniform" | "rssi" | "dist" | "height" | "layer" | "noise" | "conf" | "area" | "cell";
+export type ColorBy = "uniform" | "rssi" | "dist" | "mainDist" | "height" | "layer" | "noise" | "conf" | "area" | "cell" | "sensor";
 export const UNIFORM: RGB = [0.78, 0.8, 0.83];
 /** categorical colour-bys: no colour scale */
-const CATEGORICAL: ReadonlySet<ColorBy> = new Set<ColorBy>(["uniform", "area", "cell"]);
+const CATEGORICAL: ReadonlySet<ColorBy> = new Set<ColorBy>(["uniform", "area", "cell", "sensor"]);
+/** colorBy "sensor": each sensor of a rig in its own colour (golden-ratio hues, as the object colours) */
+export const sensorColor = (k: number): RGB => trackColor(k + 1);
 
 export interface GeometryOptions {
   colorBy: ColorBy;
+  sensor?: number;             // this geometry's sensor in the rig, for colorBy "sensor"
+  origin?: ArrayLike<number>;  // colorBy "mainDist": the main sensor's position in this sensor's frame
+  range?: [number, number];    // a fixed colour scale (shared by several sensors) instead of this scan's own
   layer: number;               // -1 = all
   maxRange: number;
   jump: number; jumpRel: number;
@@ -23,6 +28,7 @@ export interface GeometryOptions {
   fillTint?: (rgb: RGB) => RGB;
   front?: Uint8Array | null;   // beams in front of the empty scene (1): no triangle joins them to the rest
   seesWall?: Uint8Array | null;   // beams whose return matches their remembered wall: the fill is only joined to those
+  hide?: Uint8Array | null;    // beams another sensor draws (several sensors: one wall where they overlap)
 }
 
 /** a triangle of beams in front, seen this close to edge-on (|normal · ray| below this), shows range noise
@@ -36,15 +42,18 @@ export interface Geometry {
   pos: Float32Array; col: Float32Array; nrm: Float32Array;
   pIdx: Uint32Array; lIdx: Uint32Array; vIdx: Uint32Array; tIdx: Uint32Array;   // points, layer lines, vertical lines, triangles
   vis: Uint8Array;
+  vals: Float32Array;                         // scratch: each beam's colour value
   np: number; nl: number; nv: number; nt: number;   // points, layer-line / vertical-line segments, triangles
-  lo: number; hi: number;                     // colour scale range
+  fills: number;                              // of the points: remembered-wall vertices (N + beam)
+  lo: number; hi: number;                     // colour scale range used
+  span: [number, number];                     // this scan's own range (2nd..98th percentile), whatever was used
   areaCounts: [number, number, number];
 }
 
 export function createGeometry(N: number): Geometry {
   return { N, pos: new Float32Array(N * 6), col: new Float32Array(N * 6), nrm: new Float32Array(N * 6),
-    pIdx: new Uint32Array(N * 2), lIdx: new Uint32Array(N * 2), vIdx: new Uint32Array(N * 2), tIdx: new Uint32Array(N * 12), vis: new Uint8Array(N),
-    np: 0, nl: 0, nv: 0, nt: 0, lo: 0, hi: 1, areaCounts: [0, 0, 0] };
+    pIdx: new Uint32Array(N * 2), lIdx: new Uint32Array(N * 2), vIdx: new Uint32Array(N * 2), tIdx: new Uint32Array(N * 12), vis: new Uint8Array(N), vals: new Float32Array(N),
+    np: 0, nl: 0, nv: 0, nt: 0, fills: 0, lo: 0, hi: 1, span: [0, 1], areaCounts: [0, 0, 0] };
 }
 
 /** a distance that frames the scene: the 90th percentile of the raw ranges (sampled), null without returns */
@@ -55,13 +64,19 @@ export function typicalRange(g: Grid): number | null {
   return s.length ? s[Math.floor(s.length * 0.9)] : null;
 }
 
-/** value used for colouring beam i (before scaling) */
-function colorValue(g: Grid, i: number, d: number, z: number, l: number, o: GeometryOptions): number {
+/** value used for colouring beam i (before scaling); vertex v of `P` is its point */
+function colorValue(g: Grid, i: number, d: number, P: Float32Array, v: number, l: number, o: GeometryOptions): number {
+  const z = P[3 * v + 2];
   switch (o.colorBy) {
     case "area": return g.area[i];
     case "cell": return o.cells ? o.cells[i] : -1;
     case "rssi": return g.rssi[i];
     case "dist": return d;
+    case "mainDist": {
+      const c = o.origin ?? [0, 0, 0];
+      const dx = P[3 * v] - c[0], dy = P[3 * v + 1] - c[1], dz = z - c[2];
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
     case "height": return z;
     case "noise": return Math.sqrt(g.noiseVar[i]) * 1000;
     case "conf": return g.conf[i];
@@ -72,19 +87,20 @@ function colorValue(g: Grid, i: number, d: number, z: number, l: number, o: Geom
 export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: GeometryOptions): Geometry {
   const { L, B, N, rayX, rayY, rayZ } = g;
   const P = geo.pos, C = geo.col, Nn = geo.nrm, vis = geo.vis;
-  const vals = new Float32Array(N), F = o.fill;
+  const vals = geo.vals, F = o.fill;
   let np = 0, nl = 0, nv = 0, nt = 0;
   const jump = (x: number, y: number) => Math.abs(x - y) <= sameTol(Math.min(x, y), o.jump, o.jumpRel);
   const jumpOk = (a: number, b: number) => jump(D[a], D[b]);
   const inView = (d: number, l: number) => d > 0 && d <= o.maxRange && (o.layer < 0 || o.layer === l);
+  const H = o.hide;
 
   for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
     const i = l * B + b, d = D[i];
-    const ok = inView(d, l);
+    const ok = inView(d, l) && !(H && H[i]);
     vis[i] = ok ? 1 : 0;
     if (!ok) continue;
     P[3 * i] = rayX[i] * d; P[3 * i + 1] = rayY[i] * d; P[3 * i + 2] = rayZ[i] * d;
-    vals[i] = colorValue(g, i, d, P[3 * i + 2], l, o);
+    vals[i] = colorValue(g, i, d, P, i, l, o);
     geo.pIdx[np++] = i;
     if (b > 0 && vis[i - 1] && jumpOk(i, i - 1)) { geo.lIdx[2 * nl] = i - 1; geo.lIdx[2 * nl + 1] = i; nl++; }
     if (l > 0 && vis[i - B] && jumpOk(i, i - B)) { geo.vIdx[2 * nv] = i - B; geo.vIdx[2 * nv + 1] = i; nv++; }
@@ -111,10 +127,12 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
     const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     if (Fr && side(a)) {                                  // edge-on triangle of an object: a spike
       const cx = 3 * ax + ux + vx, cy = 3 * ay + uy + vy, cz = 3 * az + uz + vz;   // 3 × centroid
-      if (Math.abs(nx * cx + ny * cy + nz * cz) < FRONT_GRAZING * Math.hypot(nx, ny, nz) * Math.hypot(cx, cy, cz)) return;
+      if (Math.abs(nx * cx + ny * cy + nz * cz) < FRONT_GRAZING * Math.sqrt((nx * nx + ny * ny + nz * nz) * (cx * cx + cy * cy + cz * cz))) return;
     }
     geo.tIdx[3 * nt] = a; geo.tIdx[3 * nt + 1] = b; geo.tIdx[3 * nt + 2] = c; nt++;
-    for (const k of [a, b, c]) { Nn[3 * k] += nx; Nn[3 * k + 1] += ny; Nn[3 * k + 2] += nz; }
+    Nn[3 * a] += nx; Nn[3 * a + 1] += ny; Nn[3 * a + 2] += nz;
+    Nn[3 * b] += nx; Nn[3 * b + 1] += ny; Nn[3 * b + 2] += nz;
+    Nn[3 * c] += nx; Nn[3 * c + 1] += ny; Nn[3 * c + 2] += nz;
   };
   /** triangles of one 2×2 cell given its corners' depths (0 = not drawn) and vertex ids */
   const cell = (a: number, r: number, u: number, ur: number, da: number, dr: number, du: number, dur: number) => {
@@ -144,7 +162,7 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
     cell(id(a, fa), id(r, fr), id(u, fu), id(ur, fur), dep(a, fa), dep(r, fr), dep(u, fu), dep(ur, fur));
   }
   for (let i = 0; i < 2 * N; i++) {
-    const x = Nn[3 * i], y = Nn[3 * i + 1], z = Nn[3 * i + 2], s = Math.hypot(x, y, z);
+    const x = Nn[3 * i], y = Nn[3 * i + 1], z = Nn[3 * i + 2], s = Math.sqrt(x * x + y * y + z * z);
     if (s > 0) { Nn[3 * i] = x / s; Nn[3 * i + 1] = y / s; Nn[3 * i + 2] = z / s; }
     else { const j = i % N; Nn[3 * i] = -rayX[j]; Nn[3 * i + 1] = -rayY[j]; Nn[3 * i + 2] = -rayZ[j]; }
   }
@@ -160,8 +178,10 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
     lo = s[Math.floor(s.length * 0.02)]; hi = s[Math.floor(s.length * 0.98)];
     if (hi <= lo) hi = lo + 1;
   }
+  const span: [number, number] = [lo, hi];
+  if (o.range) [lo, hi] = o.range;
   const counts: [number, number, number] = [0, 0, 0];
-  const color = (v: number): RGB => o.colorBy === "uniform" ? UNIFORM : o.colorBy === "area" ? AREA_COLORS[v]
+  const color = (v: number): RGB => o.colorBy === "uniform" ? UNIFORM : o.colorBy === "sensor" ? sensorColor(o.sensor ?? 0) : o.colorBy === "area" ? AREA_COLORS[v]
     : o.colorBy === "cell" ? (v < 0 ? scale(UNIFORM, 0.35) : trackColor(v + 1)) : turbo((v - lo) / (hi - lo));
   for (let k = 0; k < npMain; k++) {
     const i = geo.pIdx[k];
@@ -172,11 +192,11 @@ export function buildGeometry(g: Grid, D: Float32Array, geo: Geometry, o: Geomet
   }
   for (let k = npMain; k < np; k++) {                       // remembered wall: a static surface, never an object
     const v = geo.pIdx[k], i = v - N, l = (i / B) | 0, d = F![i];
-    const val = o.colorBy === "area" ? 1 : o.colorBy === "cell" ? -1 : colorValue(g, i, d, P[3 * v + 2], l, o);
+    const val = o.colorBy === "area" ? 1 : o.colorBy === "cell" ? -1 : colorValue(g, i, d, P, v, l, o);
     let rgb = scale(color(val), FILL_DIM);
     if (o.fillTint) rgb = o.fillTint(rgb);
     C[3 * v] = rgb[0]; C[3 * v + 1] = rgb[1]; C[3 * v + 2] = rgb[2];
   }
-  Object.assign(geo, { np, nl, nv, nt, lo, hi, areaCounts: counts });
+  Object.assign(geo, { np, nl, nv, nt, fills: np - npMain, lo, hi, span, areaCounts: counts });
   return geo;
 }

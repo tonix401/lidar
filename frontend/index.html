@@ -42,6 +42,14 @@
   <div id="recList"></div>
   </details>
 
+  <details class="sect" id="secSensors" open hidden><summary><h2>Sensors <span class="val" id="sensorCount"></span> <span class="info" tabindex="0" role="button" data-tip="Several sensors, each processed on its own and drawn where it stands in the world (the first one is the origin). Click a row to show that sensor in the range image, the map and the statistics; the box shows or hides it in the 3D view. Calibrate finds where they stand: first the empty scene (nobody in it), then one person walks a wide loop through the area every sensor sees, for about 30 s. Each sensor's floor gives its tilt and height, the person's track its position and turn, and the walls and floor seen by several sensors refine all of it to about a centimetre. Mount every sensor within 10° of level, seeing some floor.">i</span></h2></summary>
+  <div id="sensorList"></div>
+  <div class="row"><button id="calStart">Calibrate…</button> <button id="calCancel" hidden>Cancel</button></div>
+  <div id="calInfo" class="note2"></div>
+  <div id="calResult"></div>
+  <div class="row" id="calActions" hidden><button id="calAccept">Use these poses</button> <button id="calDiscard">Discard</button></div>
+  </details>
+
   <div class="tabbar">
     <div class="tabs" id="modeBtns">
       <button data-mode="3d" class="on">3D</button><button data-mode="top">2D map</button><button data-mode="image">Range image</button>
@@ -65,20 +73,25 @@
       <option value="uniform">uniform (shaded)</option>
       <option value="rssi">RSSI (intensity)</option>
       <option value="dist" selected>Distance</option>
+      <option value="mainDist">Distance to main sensor</option>
       <option value="height">Height</option>
       <option value="layer">Layer</option>
       <option value="noise">Noise σ (history)</option>
       <option value="conf">Confidence (history)</option>
       <option value="area">Area class (adaptive)</option>
       <option value="cell">Radial cell (experimental)</option>
+      <option value="sensor">Sensor (several sensors)</option>
     </select></div>
   <div id="legendBox">
     <div id="legend"></div>
     <div class="legend-labels"><span id="legMin">–</span><span id="legMax">–</span></div>
   </div>
   <div class="row" data-views="3d"><span><label for="fillWalls">Walls behind moving objects</label> <span class="info" tabindex="0" role="button" data-tip="Where a moving object (a person) hides a remembered wall (Processing → Remembered walls), that wall is drawn as well, a little darker, so walls don&#x27;t show a shadow of the person.">i</span></span><input type="checkbox" id="fillWalls" checked></div>
+  <div class="row" data-views="3d" hidden><span><label for="mergeSurfaces">One wall where sensors overlap</label> <span class="info" tabindex="0" role="button" data-tip="Several sensors: where two see the same wall, floor or furniture, each draws it a few mm to a cm apart and the two surfaces interleave. This moves their points onto one fused surface (the average of what each sensor sees there, close and frontal views counting most) and draws each spot only from the sensor that sees it best. Only static surfaces; people are drawn as each sensor sees them. Updated about once a second.">i</span></span><input type="checkbox" id="mergeSurfaces" checked></div>
   <div class="row" data-views="3d top"><label for="layerSel">Layer</label><select id="layerSel"><option value="-1">all</option></select></div>
   <div class="row" data-views="3d top" data-draw="points"><label for="size">Point size <span class="v" id="sizeVal">1 px</span></label><input id="size" type="range" min="0.5" max="6" step="0.5" value="1"></div>
+  <div class="row" data-views="3d top"><span><label for="gridStyle">Grid</label> <span class="info" tabindex="0" role="button" data-tip="Distance guides on the ground: range rings around the sensor (every 5 m, 10 m beyond 60 m), or a square grid along the axes (1 m out to 20 m Max range, then 5 m, then 10 m; every 5th line stronger). With several sensors both are around the world origin (the first sensor, on the floor).">i</span></span>
+    <select id="gridStyle"><option value="rings">range rings</option><option value="square">square grid</option></select></div>
   <div class="row" data-views="3d top"><span><label for="range">Max range</label> <span class="info" tabindex="0" role="button" data-tip="Points further away than this are not drawn. Type a value and press Enter (1–250 m).">i</span></span>
     <span class="num"><input id="range" type="number" min="1" max="250" step="any" value="60"> m</span></div>
   <div id="meshStage" data-views="3d top" data-draw="mesh"></div>

@@ -22,6 +22,7 @@ class Layer:
     echoes: list[Echo]
     beam_elevation_deg: list[float] | None = None  # per-beam elevation (CoLa VANGL channel)
     timestamp_us: int | None = None   # sensor time since power-on (CoLa only)
+    received_s: float | None = None   # host time the telegram arrived (CoLa only; see clock.py)
 
     @property
     def beam_count(self) -> int:

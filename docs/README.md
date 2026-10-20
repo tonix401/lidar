@@ -10,7 +10,8 @@ Tools for a SICK MRS6224R LiDAR: a Python sensor library, CLI and viewer server 
 | [pipeline.md](pipeline.md) | The viewer's processing stages, auto and manual mode, presets, metrics and measurements |
 | [viewer.md](viewer.md) | The page: the three views, draw modes, the panel and its controls, keys, theme, and how the panel is built |
 | [objects.md](objects.md) | Object detection, tracking, classification and highlighting (work in progress) |
-| [recordings.md](recordings.md) | Recording and replay, the `.tpc` / `.tpc.zstd` format, why it is compressed this way |
+| [multisensor.md](multisensor.md) | Several sensors: setup, one clock, calibration (floor, walk, ICP), fused objects, what was measured, what is open |
+| [recordings.md](recordings.md) | Recording and replay, the `.tpc` / `.tpc.zstd` format and multi-sensor sessions, why it is compressed this way |
 | [api.md](api.md) | The viewer's HTTP API |
 | [errors.md](errors.md) | How the backend, browser and CLI report and recover from problems |
 | [development.md](development.md) | Environment, tests, debugging, browser storage keys, rules for general thresholds, measuring on recordings, visual checks, e2e pitfalls |

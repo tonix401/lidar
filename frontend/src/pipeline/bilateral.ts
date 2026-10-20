@@ -4,7 +4,6 @@ import type { Config } from "../config/config";
 import type { StageDef } from "../config/types";
 import { sameTol } from "../core/math";
 import type { Grid } from "./grid";
-import { isMoving } from "./motion";
 
 export type SpatialConfig = { on: boolean; wb: number; wl: number; srAbs: number; srRel: number; srNoise: number };
 
@@ -22,27 +21,31 @@ export const spatialStage: StageDef<"spatial"> = {
 };
 
 export function bilateral(g: Grid, src: Float32Array, dst: Float32Array, cfg: Config): void {
-  const c = cfg.spatial, { L, B } = g;
+  const c = cfg.spatial, { L, B, conf, noiseVar, motionHold } = g;
   if (!c.on) { dst.set(src); return; }
-  const sb = Math.max(1, c.wb / 2), sl = 1;
+  const sb = Math.max(1, c.wb / 2), sl = 1, adaptive = cfg.adaptive.on, dynamic = cfg.dynamic.on, dynSpatial = cfg.adaptive.dynSpatial;
+  const wbMax = c.wb, wlMax = c.wl, srAbs = c.srAbs, srRel = c.srRel, srNoise = c.srNoise;
+  // the pixel-distance part of the weight's exponent, per offset (same terms in the same order as written out)
+  const near = new Float64Array((2 * wbMax + 1) * (2 * wlMax + 1)), row = 2 * wbMax + 1;
+  for (let dl = -wlMax; dl <= wlMax; dl++) for (let db = -wbMax; db <= wbMax; db++)
+    near[(dl + wlMax) * row + db + wbMax] = -(db * db) / (2 * sb * sb) - (dl * dl) / (2 * sl * sl);
   for (let l = 0; l < L; l++) for (let b = 0; b < B; b++) {
     const i = l * B + b, d = src[i];
     if (d <= 0) { dst[i] = 0; continue; }
-    const moving = isMoving(g, i, cfg);
-    if (moving && cfg.dynamic.on) { dst[i] = d; continue; }          // smoothed in 3D by dynSmooth instead
-    const wb = moving ? Math.min(c.wb, cfg.adaptive.dynSpatial) : c.wb, wl = moving ? 0 : c.wl;
+    const moving = adaptive && motionHold[i] > 0;                    // isMoving
+    if (moving && dynamic) { dst[i] = d; continue; }                 // smoothed in 3D by dynSmooth instead
+    const wb = moving ? Math.min(wbMax, dynSpatial) : wbMax, wl = moving ? 0 : wlMax;
     if (wb === 0 && wl === 0) { dst[i] = d; continue; }
-    const sr = Math.max(sameTol(d, c.srAbs, c.srRel), c.srNoise * Math.sqrt(g.noiseVar[i])), cut = 3 * sr;
+    const sr = Math.max(sameTol(d, srAbs, srRel), srNoise * Math.sqrt(noiseVar[i])), cut = 3 * sr, den = 2 * sr * sr;
     let ws = 0, acc = 0;
     for (let dl = -wl; dl <= wl; dl++) {
       const ll = l + dl;
       if (ll < 0 || ll >= L) continue;
-      for (let db = -wb; db <= wb; db++) {
-        const bb = b + db;
-        if (bb < 0 || bb >= B) continue;
-        const j = ll * B + bb, v = src[j];
+      const b0 = Math.max(0, b - wb), b1 = Math.min(B - 1, b + wb), k0 = (dl + wlMax) * row + wbMax - b, j0 = ll * B;
+      for (let bb = b0; bb <= b1; bb++) {
+        const j = j0 + bb, v = src[j];
         if (v <= 0 || Math.abs(v - d) > cut) continue;
-        const w = g.conf[j] * Math.exp(-(db * db) / (2 * sb * sb) - (dl * dl) / (2 * sl * sl) - ((v - d) * (v - d)) / (2 * sr * sr));
+        const w = conf[j] * Math.exp(near[k0 + bb] - ((v - d) * (v - d)) / den);
         ws += w; acc += w * v;
       }
     }

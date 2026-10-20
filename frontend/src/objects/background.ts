@@ -41,23 +41,28 @@ export function updateBackground(m: Background, cur: Float32Array, noiseVar: Flo
  *  neighbours' instead of counting every sporadic return as foreground. */
 export function foreground(m: Background, cur: Float32Array, noiseVar: Float32Array, area: Uint8Array,
                            c: Config["objects"], out: Uint8Array, dims?: { L: number; B: number }): number {
+  const near = dims ? nearestAround(m.bg, dims.L, dims.B) : m.bg;   // nearest background around each beam (0 = none)
   let n = 0;
-  const near = (i: number): number => {                       // nearest background around beam i (0 = none)
-    if (!dims) return m.bg[i];
-    const { L, B } = dims, l = (i / B) | 0, b0 = i - l * B;
-    let best = 0;
-    for (let ll = Math.max(0, l - 1); ll <= Math.min(L - 1, l + 1); ll++)
-      for (let bb = Math.max(0, b0 - 1); bb <= Math.min(B - 1, b0 + 1); bb++) {
-        const v = m.bg[ll * B + bb];
-        if (v > 0 && (best === 0 || v < best)) best = v;
-      }
-    return best;
-  };
   for (let i = 0; i < cur.length; i++) {
-    const z = cur[i], b = z > 0 ? near(i) : 0;
+    const z = cur[i], b = z > 0 ? near[i] : 0;
     const fg = z > 0 && ((b <= 0 || z < b - fgTol(c, noiseVar[i], b)) || (c.scope === 1 && area[i] === 1));
     out[i] = fg ? 1 : 0;
     n += out[i];
   }
   return n;
+}
+
+let rowMin = new Float32Array(0), around = new Float32Array(0);
+
+/** per beam the nearest return (smallest positive range, 0 = none) among it and its 8 neighbours: along the
+ *  layer, then across layers (the minimum is separable). Scratch buffers, valid until the next call. */
+function nearestAround(r: Float32Array, L: number, B: number): Float32Array {
+  const N = L * B;
+  if (rowMin.length < N) { rowMin = new Float32Array(N); around = new Float32Array(N); }
+  const lo = (a: number, b: number) => (a > 0 && (b <= 0 || a < b) ? a : b);
+  for (let l = 0; l < L; l++) for (let b = 0, i = l * B; b < B; b++, i++)
+    rowMin[i] = lo(b > 0 ? r[i - 1] : 0, lo(r[i], b < B - 1 ? r[i + 1] : 0));
+  for (let i = 0; i < N; i++)
+    around[i] = lo(i >= B ? rowMin[i - B] : 0, lo(rowMin[i], i + B < N ? rowMin[i + B] : 0));
+  return around;
 }
