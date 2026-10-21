@@ -3,7 +3,7 @@
 //  • a dot marks parameters (and stages) that differ from the defaults, with a per-stage reset;
 //  • in auto mode the auto-set stages stay visible, read-only, showing the values auto chose.
 import { defaultConfig, editSpec, fmtParam, parseParam, stageDef, STAGES, type Config, type Param, type Stage,
-         type StageKey } from "../config/config";
+         type StageKey } from "@mrs6000/processing/config/config";
 import { el } from "./dom";
 import { info } from "./info";
 

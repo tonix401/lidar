@@ -1,6 +1,6 @@
 // Panel controls that only change something in some views: data-views="3d top" lists the views, and
 // data-draw="points" / "mesh" needs a draw mode with points / with surface or lines.
-import type { ViewMode } from "../config/config";
+import type { ViewMode } from "@mrs6000/processing/config/config";
 import { drawParts, type DrawMode } from "../render/scene3d";
 
 export function relevant(e: HTMLElement, view: ViewMode, draw: DrawMode): boolean {

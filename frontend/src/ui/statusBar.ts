@@ -1,6 +1,6 @@
 // The title and the Stream / Device status boxes: device name, what is shown (live / replaying a file), frame
 // rate and size, and the status dots.
-import type { FrameMeta, ServerState } from "../core/types";
+import type { FrameMeta, ServerState } from "@mrs6000/processing/core/types";
 import { deviceSummary, renderDevice } from "./devicePanel";
 import { $ } from "./dom";
 

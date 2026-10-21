@@ -4,6 +4,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   server: { port: 5173, proxy: { "/api": "http://127.0.0.1:8000" } },
   build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1000 },
-  worker: { format: "es" },                   // pipeline/worker.ts: one per sensor
+  worker: { format: "es" },                   // src/worker/worker.ts: one per sensor
   test: { include: ["tests/**/*.test.ts"], environment: "node" },
 });

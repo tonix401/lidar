@@ -1,10 +1,10 @@
 // The Statistics box: every live number, grouped (rendered by ui/statsPanel.ts). Pure: from a snapshot of
 // the pipeline's state to rows.
-import type { NoiseEstimate } from "../config/auto";
-import { STAGES, type Config, type ViewMode } from "../config/config";
-import type { ObjectDetector } from "../objects/detector";
-import type { Track } from "../objects/tracker";
-import type { FrameStats } from "../pipeline/processor";
+import type { NoiseEstimate } from "@mrs6000/processing/config/auto";
+import { STAGES, type Config, type ViewMode } from "@mrs6000/processing/config/config";
+import type { ObjectDetector } from "@mrs6000/processing/objects/detector";
+import type { Track } from "@mrs6000/processing/objects/tracker";
+import type { FrameStats } from "@mrs6000/processing/pipeline/processor";
 import { drawParts, type DrawMode } from "../render/scene3d";
 import type { StatRow } from "./statsPanel";
 

@@ -1,4 +1,4 @@
-// End-to-end with several sensors: the real backend replays a simulated 3-sensor session (tests/helpers/
+// End-to-end with several sensors: the real backend replays a simulated 3-sensor session (processing/sim/
 // session.ts); in the page, the sensors are listed, Calibrate finds their poses from the empty scene and one
 // walk, Accept stores them in the session, and the walker is one fused object.
 import { execSync, spawn, type ChildProcess } from "node:child_process";
@@ -8,24 +8,24 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { compose, fromParams, invert, poseError, type PoseParams } from "../src/fusion/pose";
-import { RIG3, ROOM } from "../tests/helpers/rig";
-import { writeSession } from "../tests/helpers/session";
-import { browserExecutable, pythonInVenv } from "./browser";
+import { compose, fromParams, invert, poseError, type PoseParams } from "@mrs6000/processing/fusion/pose";
+import { RIG3, ROOM } from "@mrs6000/processing/sim/rig";
+import { writeSession } from "@mrs6000/processing/sim/session";
+import { browserExecutable, serverCommand } from "./browser";
 
 const ROOT = resolve(process.cwd(), "..");
-const PYTHON = process.env.PYTHON ?? pythonInVenv(join(ROOT, "backend"));
+const SERVER = serverCommand(ROOT);
 const freePort = () => new Promise<number>(res => { const s = createServer(); s.listen(0, () => { const p = (s.address() as { port: number }).port; s.close(() => res(p)); }); });
 
 let backend: ChildProcess, browser: Browser, page: Page, dir = "", log = "";
 const errors: string[] = [];
 
 beforeAll(async () => {
-  if (!existsSync("dist/index.html")) execSync("npx vite build", { stdio: "inherit" });
+  if (!existsSync("dist/index.html")) execSync("bun --bun x vite build", { stdio: "inherit" });
   dir = mkdtempSync(join(tmpdir(), "mrs6000-rig-"));
   writeSession(join(dir, "sim_rig3"), RIG3.map((s, k) => ({ ...s, B: 181, noise: 0.01, seed: k + 1 })), ROOM, 50);
   const port = await freePort();
-  backend = spawn(PYTHON, ["-m", "mrs6000.server", "--offline", "--port", String(port), "--recordings", dir,
+  backend = spawn(SERVER[0], [...SERVER.slice(1), "--offline", "--port", String(port), "--recordings", dir,
                            "--frontend", resolve("dist"), "--replay", join(dir, "sim_rig3")]);
   backend.stdout!.on("data", d => { log += d; });
   backend.stderr!.on("data", d => { log += d; });

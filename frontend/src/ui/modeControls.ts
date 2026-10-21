@@ -1,7 +1,7 @@
 // The head of the Processing section: auto / manual, the preset (manual only) and "Reset to defaults".
 // The stages below are StageControls.
-import type { PresetName } from "../config/config";
-import type { Mode } from "../config/state";
+import type { PresetName } from "@mrs6000/processing/config/config";
+import type { Mode } from "@mrs6000/processing/config/state";
 import { $ } from "./dom";
 import { setInfo } from "./info";
 

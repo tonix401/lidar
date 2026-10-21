@@ -1,9 +1,9 @@
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultConfig, STAGES } from "../src/config/config";
-import { Tracker } from "../src/objects/tracker";
+import { defaultConfig, STAGES } from "@mrs6000/processing/config/config";
+import { Tracker } from "@mrs6000/processing/objects/tracker";
 import { deviceSummary, renderDevice } from "../src/ui/devicePanel";
 import { $ } from "../src/ui/dom";
 import { ObjectsPanel } from "../src/ui/objectsPanel";
@@ -12,8 +12,8 @@ import { StageControls } from "../src/ui/stageControls";
 import { StatsPanel } from "../src/ui/statsPanel";
 import { applyViews } from "../src/ui/views";
 import { applyTheme, hexRGB, themeColors } from "../src/ui/theme";
-import { DIM_BACKGROUND, ObjectDetector } from "../src/objects/detector";
-import type { ServerState } from "../src/core/types";
+import { DIM_BACKGROUND, ObjectDetector } from "@mrs6000/processing/objects/detector";
+import type { ServerState } from "@mrs6000/processing/core/types";
 
 beforeEach(() => {
   const html = readFileSync(resolve(process.cwd(), "index.html"), "utf8");

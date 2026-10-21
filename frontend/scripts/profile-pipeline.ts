@@ -1,17 +1,17 @@
-// Where the time goes per scan: the simulated three-sensor rig (tests/helpers/rig.ts) at full resolution,
+// Where the time goes per scan: the simulated three-sensor rig (processing/sim/rig.ts) at full resolution,
 // calibrated (so the cross-check runs), with a person walking; every pipeline step, the geometry build and the
 // fusion timed separately. Scans are cast up front, so only the page's own work is measured.
 //   make profile                     → 24 × 923 beams, 60 scans per sensor after 40 of warm-up
 //   make profile ARGS="301 100"      (beams, scans)
-import { defaultConfig } from "../src/config/config";
-import { apply, compose, invert, type Pose } from "../src/fusion/pose";
-import { mergeSurfaces } from "../src/fusion/surfaces";
-import { ObjectFusion, observe } from "../src/fusion/objects";
-import type { OtherSensor } from "../src/pipeline/crosscheck";
-import { Processor } from "../src/pipeline/processor";
-import { PIPELINE } from "../src/pipeline/steps";
+import { defaultConfig } from "@mrs6000/processing/config/config";
+import { apply, compose, invert, type Pose } from "@mrs6000/processing/fusion/pose";
+import { mergeSurfaces } from "@mrs6000/processing/fusion/surfaces";
+import { ObjectFusion, observe } from "@mrs6000/processing/fusion/objects";
+import type { OtherSensor } from "@mrs6000/processing/pipeline/crosscheck";
+import { Processor } from "@mrs6000/processing/pipeline/processor";
+import { PIPELINE } from "@mrs6000/processing/pipeline/steps";
 import { buildGeometry, createGeometry } from "../src/render/geometry";
-import { RIG3, ROOM, scanFrame, scanTime, simGeometry, simMeta } from "../tests/helpers/rig";
+import { RIG3, ROOM, scanFrame, scanTime, simGeometry, simMeta } from "@mrs6000/processing/sim/rig";
 
 const [beams = "923", scans = "60"] = process.argv.slice(2);
 const B = Number(beams), K = Number(scans), WARM = 40;

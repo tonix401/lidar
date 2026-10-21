@@ -6,11 +6,11 @@
 //          tall as the layers are apart in angle (≈ 4.6 beam steps on the MRS6000), so shapes keep their
 //          proportions: a cell is `cell` wide and `rowH()` tall
 // Both draw the same processed data and colours as the 3D view, plus object overlays.
-import { css, packABGR, scale, turbo } from "../core/colors";
-import { DEG } from "../core/math";
-import type { FrameMeta, RGB, ThemeColors } from "../core/types";
-import { boxCorners, trackLabel, type Track } from "../objects/tracker";
-import type { Grid } from "../pipeline/grid";
+import { css, packABGR, scale, turbo } from "@mrs6000/processing/core/colors";
+import { DEG } from "@mrs6000/processing/core/math";
+import type { FrameMeta, RGB, ThemeColors } from "@mrs6000/processing/core/types";
+import { boxCorners, trackLabel, type Track } from "@mrs6000/processing/objects/tracker";
+import type { Grid } from "@mrs6000/processing/pipeline/grid";
 import type { Geometry } from "./geometry";
 import { drawParts, squareStep, type DrawMode, type GridStyle, type OverlayOptions } from "./scene3d";
 

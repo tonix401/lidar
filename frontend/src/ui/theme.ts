@@ -1,6 +1,6 @@
 // Theme: "dark" (default), "light", or "system" (follows the OS). The colours live as CSS variables on
 // :root (styles.css); canvas and WebGL drawing read them through themeColors().
-import type { ThemeColors } from "../core/types";
+import type { ThemeColors } from "@mrs6000/processing/core/types";
 
 export type Theme = "system" | "dark" | "light";
 export type { ThemeColors };

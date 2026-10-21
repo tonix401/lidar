@@ -4,11 +4,11 @@
 // group placed at the sensor's pose in the world, holding its geometry, housing and field-of-view guides.
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { css, scale } from "../core/colors";
-import type { Mount, RGB, ThemeColors } from "../core/types";
-import { toMatrix4, type Pose } from "../fusion/pose";
-import { boxCorners, MAX_TRACKS, TRAIL_MAX, trackLabel, type Track } from "../objects/tracker";
-import { mountZSign } from "../pipeline/rays";
+import { css, scale } from "@mrs6000/processing/core/colors";
+import type { Mount, RGB, ThemeColors } from "@mrs6000/processing/core/types";
+import { toMatrix4, type Pose } from "@mrs6000/processing/fusion/pose";
+import { boxCorners, MAX_TRACKS, TRAIL_MAX, trackLabel, type Track } from "@mrs6000/processing/objects/tracker";
+import { mountZSign } from "@mrs6000/processing/pipeline/rays";
 import type { Geometry } from "./geometry";
 import { buildSensorModel } from "./sensorModel";
 

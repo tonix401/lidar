@@ -6,7 +6,7 @@ session's session.json for a recording), readable and editable by hand:
                 "pose": {"x": 0, "y": 0, "z": 1.1, "yaw": 0, "pitch": 0, "roll": 0},
                 "time_offset_s": 0.0, "calibrated": "2026-10-20T12:00:00", "quality": {...}}]}
 
-Positions in m, angles in degrees (yaw about z, then pitch, then roll; see frontend/src/fusion/pose.ts).
+Positions in m, angles in degrees (yaw about z, then pitch, then roll; see processing/src/fusion/pose.ts).
 Calibration happens in the browser; the backend only stores what it is sent."""
 from __future__ import annotations
 

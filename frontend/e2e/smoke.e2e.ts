@@ -7,15 +7,15 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { castRanges, elevations } from "../tests/helpers/scene";
-import { writeTpc } from "../tests/helpers/session";
-import { browserExecutable, pythonInVenv } from "./browser";
+import { castRanges, elevations } from "@mrs6000/processing/sim/scene";
+import { writeTpc } from "@mrs6000/processing/sim/session";
+import { browserExecutable, serverCommand } from "./browser";
 
 const ROOT = resolve(process.cwd(), "..");
-const PYTHON = process.env.PYTHON ?? pythonInVenv(join(ROOT, "backend"));
+const SERVER = serverCommand(ROOT);
 const L = 24, B = 301, STEP = 0.4;
 
-/** a person walking past a wall, again and again (format: tests/helpers/session.ts) */
+/** a person walking past a wall, again and again (format: processing/sim/session.ts) */
 function writeRecording(path: string, scans: number): void {
   const hdr = { layers: L, beams: B, start_azimuth_deg: -60, step_deg: STEP, upside_down: false,
                 elev: elevations(L).flatMap(e => Array<number>(B).fill(e)) };
@@ -31,12 +31,12 @@ let backend: ChildProcess, browser: Browser, page: Page, base = "", log = "";
 const errors: string[] = [];
 
 beforeAll(async () => {
-  if (!existsSync("dist/index.html")) execSync("npx vite build", { stdio: "inherit" });
+  if (!existsSync("dist/index.html")) execSync("bun --bun x vite build", { stdio: "inherit" });
   const dir = mkdtempSync(join(tmpdir(), "mrs6000-e2e-"));
   writeRecording(join(dir, "synthetic.tpc"), 120);
   const port = await freePort();
   base = `http://127.0.0.1:${port}`;
-  backend = spawn(PYTHON, ["-m", "mrs6000.server", "--offline", "--port", String(port), "--recordings", dir,
+  backend = spawn(SERVER[0], [...SERVER.slice(1), "--offline", "--port", String(port), "--recordings", dir,
                            "--frontend", resolve("dist"), "--replay", join(dir, "synthetic.tpc")]);
   backend.stdout!.on("data", d => { log += d; });
   backend.stderr!.on("data", d => { log += d; });

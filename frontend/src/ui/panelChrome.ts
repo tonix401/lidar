@@ -1,6 +1,6 @@
 // The panel around the controls: boxes and sections that fold (remembered), the whole panel folding to its
 // title bar, its width (drag the right edge; double-click: default), and the theme picker.
-import { KEYS, type Store } from "../config/storage";
+import { KEYS, type Store } from "./storage";
 import { $ } from "./dom";
 import { onSystemThemeChange, type Theme } from "./theme";
 

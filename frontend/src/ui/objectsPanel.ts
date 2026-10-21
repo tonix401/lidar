@@ -1,5 +1,5 @@
-import { css } from "../core/colors";
-import type { Track } from "../objects/tracker";
+import { css } from "@mrs6000/processing/core/colors";
+import type { Track } from "@mrs6000/processing/objects/tracker";
 import { el } from "./dom";
 
 export function objectRow(t: Track, selected: number, onSelect: (id: number) => void): HTMLDivElement {

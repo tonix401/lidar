@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { defaultConfig } from "../src/config/config";
-import { Processor } from "../src/pipeline/processor";
+import { defaultConfig } from "@mrs6000/processing/config/config";
+import { Processor } from "@mrs6000/processing/pipeline/processor";
 import { buildGeometry, createGeometry, UNIFORM, type GeometryOptions } from "../src/render/geometry";
-import { frameData, meta } from "./helpers/scene";
+import { frameData, meta } from "@mrs6000/processing/sim/scene";
 
 function processed(objects = [] as { x: number; y: number; r: number; z0: number; z1: number }[]) {
   const p = new Processor(defaultConfig());
@@ -122,8 +122,8 @@ describe("geometry", () => {
 
 describe("colour by distance to the main sensor", () => {
   it("gives a spot the same colour whichever sensor saw it", async () => {
-    const { RIG3, ROOM, scanFrame, simMeta } = await import("./helpers/rig");
-    const { apply, invert } = await import("../src/fusion/pose");
+    const { RIG3, ROOM, scanFrame, simMeta } = await import("@mrs6000/processing/sim/rig");
+    const { apply, invert } = await import("@mrs6000/processing/fusion/pose");
     const [a, b] = RIG3, main = a.pose.t, range: [number, number] = [1, 9];
     const built = [a, b].map(s => {
       const p = new Processor(defaultConfig());

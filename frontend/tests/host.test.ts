@@ -1,13 +1,13 @@
-// The page's mirror of a sensor's processing (pipeline/host.ts, snapshot.ts): what a worker sends after a scan
+// The page's mirror of a sensor's processing (src/worker/host.ts, snapshot.ts): what a worker sends after a scan
 // must give the page the same grid, objects and statistics as the Processor itself.
 import { describe, expect, it } from "vitest";
-import { defaultConfig } from "../src/config/config";
-import { ObjectDetector } from "../src/objects/detector";
-import { createGrid } from "../src/pipeline/grid";
-import { ProcessorHost } from "../src/pipeline/host";
-import { Processor } from "../src/pipeline/processor";
-import { applySnapshot, MIRRORED, MIRRORED_RAYS, snapshotBytes, takeSnapshot } from "../src/pipeline/snapshot";
-import { frameData, meta } from "./helpers/scene";
+import { defaultConfig } from "@mrs6000/processing/config/config";
+import { ObjectDetector } from "@mrs6000/processing/objects/detector";
+import { createGrid } from "@mrs6000/processing/pipeline/grid";
+import { ProcessorHost } from "../src/worker/host";
+import { Processor } from "@mrs6000/processing/pipeline/processor";
+import { applySnapshot, MIRRORED, MIRRORED_RAYS, snapshotBytes, takeSnapshot } from "../src/worker/snapshot";
+import { frameData, meta } from "@mrs6000/processing/sim/scene";
 
 /** a walk across the room: the background learned, then a tracked person */
 function walk(p: { ingest(d: Float32Array, m: ReturnType<typeof meta>): unknown }, scans = 60) {

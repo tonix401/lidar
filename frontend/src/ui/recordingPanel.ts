@@ -1,8 +1,8 @@
 // Record button, recordings list (name, duration, play, ⋯ menu with size / download / delete) and the
 // transport bar for replays.
 import type { Api, ControlAction } from "../api/client";
-import { fmtMB, fmtTime } from "../core/format";
-import type { RecordingInfo, ReplayState, ServerState } from "../core/types";
+import { fmtMB, fmtTime } from "@mrs6000/processing/core/format";
+import type { RecordingInfo, ReplayState, ServerState } from "@mrs6000/processing/core/types";
 import { $, el } from "./dom";
 
 export interface RecordingEvents {

@@ -2,10 +2,10 @@
 // (three.js-independent). All three share one position/colour/normal buffer and differ only in their index
 // lists. Vertex i (< N) is beam i; vertex N + i is the remembered wall behind beam i (`fill`), drawn where
 // a moving object hides it and meshed together with the surrounding wall.
-import { AREA_COLORS, scale, trackColor, turbo } from "../core/colors";
-import { sameTol } from "../core/math";
-import type { RGB } from "../core/types";
-import type { Grid } from "../pipeline/grid";
+import { AREA_COLORS, scale, trackColor, turbo } from "@mrs6000/processing/core/colors";
+import { sameTol } from "@mrs6000/processing/core/math";
+import type { RGB } from "@mrs6000/processing/core/types";
+import type { Grid } from "@mrs6000/processing/pipeline/grid";
 
 export type ColorBy = "uniform" | "rssi" | "dist" | "mainDist" | "height" | "layer" | "noise" | "conf" | "area" | "cell" | "sensor";
 export const UNIFORM: RGB = [0.78, 0.8, 0.83];

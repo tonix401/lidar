@@ -1,4 +1,4 @@
-import type { Config } from "../config/config";
+import type { Config } from "@mrs6000/processing/config/config";
 import { themeColors } from "./theme";
 
 /** RSSI histogram with the kept range highlighted (sqrt scale so small bins stay visible) */

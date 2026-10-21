@@ -50,7 +50,7 @@ class ControlRequest(BaseModel):
 
 NO_FRONTEND = """<!doctype html><meta charset="utf-8"><title>MRS6000 viewer</title>
 <body style="font:14px system-ui;background:#0e1116;color:#d7dde5;padding:2em">
-<h1>Frontend not built</h1><p>Run <code>make build</code> (or <code>cd frontend && npm run build</code>),
+<h1>Frontend not built</h1><p>Run <code>make build</code> (or <code>cd frontend && bun run build</code>),
 or use the dev server: <code>make dev</code> → http://localhost:5173.</p><p>API docs: <a href="/docs" style="color:#4aa3ff">/docs</a></p>"""
 
 

@@ -1,6 +1,6 @@
 // Active problems (server unreachable, sensor down, processing error, failed action): one short console
 // line when a problem starts or changes and one when it clears — never one per retry.
-import { shortError } from "../core/format";
+import { shortError } from "@mrs6000/processing/core/format";
 
 export type ProblemName = "server" | "sensor" | "replay" | "processing" | "action";
 

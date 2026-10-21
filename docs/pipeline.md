@@ -1,4 +1,4 @@
-# Viewer pipeline (`frontend/src/pipeline/`)
+# Viewer pipeline (`processing/src/pipeline/`)
 
 All processing runs in the browser. Object detection is described separately in [objects.md](objects.md).
 
@@ -61,7 +61,7 @@ The order of the stages is `PIPELINE` in `pipeline/steps.ts`; `Processor` only r
 2. **Per-beam state** it keeps across scans: a `beamState({ … }, { reset })` declaration (`pipeline/beamState.ts`). `reset: true` means `resetHistory()` forgets it (seek, source switch, preset change).
 3. **Wiring:** add the slice to `Config` and the `StageDef` to `STAGES` (`config/stages.ts`, panel order), the state to `STATES` and `Grid` (`pipeline/grid.ts`), and a step to `PIPELINE`. Steps run in three phases: `ingest` (once per new scan, raw ranges), `refine` (spatial, also after a settings change), `learn` (once per new scan, after refine).
 
-Tests that guard this: `config.test.ts` (every stage declared once; presets cover exactly the preset stages), `pipeline.test.ts` ("grid": one owner per field, what reset forgets), and `golden.test.ts` (whole-pipeline checksums on a synthetic walk; a refactor must keep them, and an intended change updates them with `npx vitest run -u`).
+Tests that guard this: `config.test.ts` (every stage declared once; presets cover exactly the preset stages), `pipeline.test.ts` ("grid": one owner per field, what reset forgets), and `golden.test.ts` (whole-pipeline checksums on a synthetic walk; a refactor must keep them, and an intended change updates them with `bun --bun x vitest run -u` in `processing/`).
 
 ## Auto and manual mode
 

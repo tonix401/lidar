@@ -1,4 +1,4 @@
-import type { ServerState } from "../core/types";
+import type { ServerState } from "@mrs6000/processing/core/types";
 import { $ } from "./dom";
 
 const STATUS: Record<number, string> = { 0: "unknown", 1: "startup", 2: "service mode", 3: "normal", 4: "suspended",

@@ -1,6 +1,6 @@
 // The view tabs (3D / 2D map / range image) with Pause for the live view, the 3D camera buttons, "fit" for
 // the 2D views, and the keyboard shortcuts.
-import type { ViewMode } from "../config/config";
+import type { ViewMode } from "@mrs6000/processing/config/config";
 import type { CameraView, DrawMode } from "../render/scene3d";
 import { $ } from "./dom";
 import { setInfo } from "./info";

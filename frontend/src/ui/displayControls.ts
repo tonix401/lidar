@@ -1,8 +1,8 @@
 // The Display section: draw mode, colouring and its legend, layer, mount, point size, max range, walls behind
 // objects, and the object overlays. Changes `ui` in place, remembers what is stored, and asks the app to redraw.
-import type { Store } from "../config/storage";
-import { turboGradientCss } from "../core/colors";
-import type { Mount } from "../core/types";
+import type { Store } from "./storage";
+import { turboGradientCss } from "@mrs6000/processing/core/colors";
+import type { Mount } from "@mrs6000/processing/core/types";
 import type { ColorBy, Geometry } from "../render/geometry";
 import type { DrawMode, GridStyle } from "../render/scene3d";
 import { $ } from "./dom";

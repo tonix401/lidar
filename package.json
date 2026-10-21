@@ -1,0 +1,10 @@
+{
+  "name": "mrs6000",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "processing",
+    "server",
+    "frontend"
+  ]
+}

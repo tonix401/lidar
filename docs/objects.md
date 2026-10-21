@@ -1,6 +1,6 @@
 # Object detection and highlighting (work in progress)
 
-Runs in the browser (`frontend/src/objects/`), after the [pipeline](pipeline.md) stages.
+Runs per sensor (`processing/src/objects/`, in the page's workers), after the [pipeline](pipeline.md) stages.
 
 ## Research basis
 

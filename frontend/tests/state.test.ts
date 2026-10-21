@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { defaultConfig, matchingPreset } from "../src/config/config";
-import { ConfigState } from "../src/config/state";
-import { Processor } from "../src/pipeline/processor";
+import { defaultConfig, matchingPreset } from "@mrs6000/processing/config/config";
+import { ConfigState } from "@mrs6000/processing/config/state";
+import { Processor } from "@mrs6000/processing/pipeline/processor";
 import { statRows } from "../src/ui/statRows";
-import { frameData, meta } from "./helpers/scene";
+import { frameData, meta } from "@mrs6000/processing/sim/scene";
 
 describe("ConfigState", () => {
   it("starts in auto mode from defaults; ignores garbage", () => {

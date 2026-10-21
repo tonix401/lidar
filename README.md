@@ -10,6 +10,6 @@ make sim-session                                      # a simulated 3-sensor ses
 make test
 ```
 
-Needs Python ≥ 3.14, Node.js 22.22+ or 24.15+, make and git.
+Needs Python ≥ 3.14, Bun 1.4+, make and git.
 
 **Documentation is in [`docs/`](docs/README.md):** [setup](docs/setup.md) · [architecture](docs/architecture.md) · [sensor](docs/sensor.md) · [pipeline](docs/pipeline.md) · [objects](docs/objects.md) · [several sensors](docs/multisensor.md) · [recordings](docs/recordings.md) · [API](docs/api.md) · [errors](docs/errors.md) · [development](docs/development.md)

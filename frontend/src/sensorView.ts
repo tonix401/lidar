@@ -1,16 +1,16 @@
 // One sensor of the rig as the page holds it: its frame stream, its own Processor (the whole pipeline runs
-// per sensor, on its own range image, in its own worker: pipeline/host.ts), its Geometry, and its pose in the
+// per sensor, on its own range image, in its own worker: worker/host.ts), its Geometry, and its pose in the
 // world (rig.json). The composition
 // root (app.ts) keeps one per sensor of the current source; a single sensor is a rig of one at the origin.
 import { ApiError, type Api, type Frame } from "./api/client";
 import { FrameStream, type StreamHealth } from "./api/stream";
-import type { Config } from "./config/config";
-import { KEYS, type Store } from "./config/storage";
-import type { FrameMeta, Mount, RigSensor } from "./core/types";
-import { fromParams, IDENTITY, type Pose } from "./fusion/pose";
-import type { Observation } from "./fusion/objects";
-import type { SurfaceMerge } from "./fusion/surfaces";
-import { ProcessorHost, type HostEvents } from "./pipeline/host";
+import type { Config } from "@mrs6000/processing/config/config";
+import { KEYS, type Store } from "./ui/storage";
+import type { FrameMeta, Mount, RigSensor } from "@mrs6000/processing/core/types";
+import { fromParams, IDENTITY, type Pose } from "@mrs6000/processing/fusion/pose";
+import type { Observation } from "@mrs6000/processing/fusion/objects";
+import type { SurfaceMerge } from "@mrs6000/processing/fusion/surfaces";
+import { ProcessorHost, type HostEvents } from "./worker/host";
 import type { Geometry } from "./render/geometry";
 
 export class SensorView {

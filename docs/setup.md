@@ -1,14 +1,14 @@
 # Setup
 
-You need **Python ≥ 3.14** (with `venv`; recordings use its built-in `compression.zstd`), **Node.js 22.22+ or 24.15+**, **make** and **git**. Chrome or Chromium is only needed for the browser test.
+You need **Python ≥ 3.14** (with `venv`; recordings use its built-in `compression.zstd`), **[Bun](https://bun.sh) 1.4+** (package manager and runtime of the TypeScript side; no Node needed), **make** and **git**. Chrome or Chromium is only needed for the browser test.
 
 | Distribution | Install the prerequisites |
 |---|---|
-| Arch / Manjaro / EndeavourOS | `sudo pacman -S python nodejs npm make git` (optional: `chromium`) |
-| Debian / Ubuntu / Mint | `sudo apt install python3 python3-venv make git`, then Node 24 from [nodejs.org](https://nodejs.org) or `nvm install 24` (the distro's `nodejs` is usually too old) |
-| Fedora | `sudo dnf install python3 make git nodejs` (check `node --version`) |
+| Arch / Manjaro / EndeavourOS | `sudo pacman -S python bun make git` (optional: `chromium`) |
+| Debian / Ubuntu / Mint | `sudo apt install python3 python3-venv make git unzip`, then Bun with `curl -fsSL https://bun.sh/install | bash` |
+| Fedora | `sudo dnf install python3 make git unzip`, then Bun with `curl -fsSL https://bun.sh/install | bash` |
 | NixOS | `nix-shell` in the repo (see `shell.nix`) |
-| Other | Python 3 + venv, make and git from the package manager; Node from the distro if new enough, else [nvm](https://github.com/nvm-sh/nvm) `install 24` |
+| Other | Python 3 + venv, make and git from the package manager; Bun from the package manager if it has 1.4+, else `curl -fsSL https://bun.sh/install | bash` |
 
 `make install` checks the versions and says what's missing. You don't have to run it first: `run`, `dev` and the test targets install automatically.
 
@@ -37,7 +37,7 @@ You need **Python ≥ 3.14** (with `venv`; recordings use its built-in `compress
 | "venv module is missing" | Install the distro's venv package, e.g. `python3-venv` on Debian/Ubuntu |
 | Node too old | `nvm install 24`, then `make install` in the same shell |
 | Browser test finds no Chromium | It looks for `$CHROMIUM`, then `chromium` / `google-chrome` on PATH. Install one, set `CHROMIUM=/path/to/browser`, or run `make browser` |
-| Playwright's Chromium won't start (bare system) | `cd frontend && sudo npx playwright-core install-deps chromium` |
+| Playwright's Chromium won't start (bare system) | `cd frontend && sudo bunx playwright-core install-deps chromium` |
 
 **Recordings** are not in git (too big): share `.tpc.zstd` files separately (download button in the viewer) and put them in `recordings/`. See [recordings.md](recordings.md).
 

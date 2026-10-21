@@ -1,19 +1,16 @@
-// Which folder of src/ may import which (see docs/architecture.md, "Layers"). Lower layers never import
-// higher ones, so the processing runs and tests without a DOM, three.js or the server.
+// Which folder of src/ may import which (see docs/architecture.md, "Layers"). The processing model is the
+// @mrs6000/processing package (its own layer rules: processing/tests/layers.test.ts); here, the page's own
+// folders on top of it.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const SRC = resolve(__dirname, "../src");
+const SRC = resolve(__dirname, "../src"), PKG = "@mrs6000/processing/";
 const ALLOWED: Record<string, string[]> = {
-  core: [],
-  config: ["core", "pipeline", "objects"],          // config, pipeline and objects form the processing model
-  pipeline: ["core", "config", "objects"],
-  objects: ["core", "config", "pipeline"],
-  fusion: ["core", "config", "pipeline", "objects"],  // several sensors: on top of the processing model
-  render: ["core", "config", "pipeline", "objects", "fusion"],
-  api: ["core"],
-  ui: ["core", "config", "pipeline", "objects", "fusion", "render", "api:type"],   // the API only as types (calls go through callbacks)
+  render: ["processing"],
+  worker: ["processing"],                           // the page's Web Workers: a Processor per sensor
+  api: ["processing/core"],
+  ui: ["processing", "render", "api:type"],         // the API only as types (calls go through callbacks)
 };
 
 function files(dir: string): string[] {
@@ -21,11 +18,11 @@ function files(dir: string): string[] {
     e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []);
 }
 
-function imports(file: string): { target: string; typeOnly: boolean }[] {
-  const out = [];
-  for (const m of readFileSync(file, "utf8").matchAll(/^(?:import|export)\s+(type\s+)?[^"']*?from\s+["'](\.[^"']+)["']/gm))
-    out.push({ target: relative(SRC, resolve(dirname(file), m[2])).split("/")[0], typeOnly: !!m[1] });
-  return out;
+/** the layer an import specifier points at: a folder of src/, or "processing/<folder>"; null for other packages */
+function target(file: string, spec: string): string | null {
+  if (spec.startsWith(PKG)) return "processing/" + spec.slice(PKG.length).split("/")[0];
+  if (!spec.startsWith(".")) return null;
+  return relative(SRC, resolve(dirname(file), spec)).split("/")[0];
 }
 
 describe("layers", () => {
@@ -34,11 +31,19 @@ describe("layers", () => {
     for (const f of files(SRC)) {
       const from = relative(SRC, f).split("/")[0];
       const allowed = ALLOWED[from];
-      if (!allowed) continue;                                   // main.ts, app.ts, app/: the composition root
-      for (const { target, typeOnly } of imports(f))
-        if (target !== from && !allowed.includes(target) && !(typeOnly && allowed.includes(target + ":type")))
-          bad.push(`${relative(SRC, f)} → ${target}${typeOnly ? " (type)" : ""}`);
+      if (!allowed) continue;                                   // main.ts, app.ts, sensorView.ts: the composition root
+      for (const m of readFileSync(f, "utf8").matchAll(/^(?:import|export)\s+(type\s+)?[^"']*?from\s+["']([^"']+)["']/gm)) {
+        const t = target(f, m[2]), typeOnly = !!m[1];
+        if (!t || t === from) continue;
+        const ok = allowed.includes(t) || allowed.includes(t.split("/")[0]) || (typeOnly && allowed.includes(t + ":type"));
+        if (!ok) bad.push(`${relative(SRC, f)} → ${t}${typeOnly ? " (type)" : ""}`);
+      }
     }
+    expect(bad).toEqual([]);
+  });
+
+  it("the processing model is imported as the package, never by path", () => {
+    const bad = files(SRC).filter(f => /from\s+["'](\.\.\/)+processing\//.test(readFileSync(f, "utf8")));
     expect(bad).toEqual([]);
   });
 });

@@ -1,11 +1,11 @@
 // The hover tooltip for one beam in the 2D views: where it points, its ranges and what the pipeline made of it.
-import type { Config } from "../config/config";
-import { popcount } from "../core/math";
-import type { FrameMeta, Mount } from "../core/types";
-import type { ObjectDetector } from "../objects/detector";
-import { trackLabel } from "../objects/tracker";
-import type { Grid } from "../pipeline/grid";
-import { historyMask } from "../pipeline/history";
+import type { Config } from "@mrs6000/processing/config/config";
+import { popcount } from "@mrs6000/processing/core/math";
+import type { FrameMeta, Mount } from "@mrs6000/processing/core/types";
+import type { ObjectDetector } from "@mrs6000/processing/objects/detector";
+import { trackLabel } from "@mrs6000/processing/objects/tracker";
+import type { Grid } from "@mrs6000/processing/pipeline/grid";
+import { historyMask } from "@mrs6000/processing/pipeline/history";
 import type { Geometry } from "./geometry";
 
 export interface BeamContext {

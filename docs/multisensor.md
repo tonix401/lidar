@@ -50,7 +50,7 @@ was measured and what is still open is [at the end](#measured-2026-10-20).
 
 ## Calibration: where each sensor stands
 
-`frontend/src/fusion/calib/`, run from the panel (**Sensors → Calibrate…**), guided by `calibrator.ts`:
+`processing/src/fusion/calib/`, run from the panel (**Sensors → Calibrate…**), guided by `calibrator.ts`:
 1. **Empty scene:** nobody in the area until every sensor has its empty scene and 2 s passed without a moving
    object.
 2. **Walk:** one person walks a wide loop through the area all sensors see, for at least 30 s (and until every
@@ -97,7 +97,7 @@ Each result lists the walk's residual, the scene's median residual and overlap, 
 
 ## Objects fused from all sensors
 
-`frontend/src/fusion/objects.ts`. Every sensor keeps detecting and tracking in its own range image
+`processing/src/fusion/objects.ts`. Every sensor keeps detecting and tracking in its own range image
 ([objects.md](objects.md)). With several sensors:
 - each sensor's tracked objects become world points (`observe`, from the ranges the detector segmented: the
   smoothed output draws an object's mixed pixels at the wall behind it, metres away),
@@ -186,7 +186,7 @@ replays as one timeline, each scan to its sensor's feed, with the poses it was r
 
 ## Measured (2026-10-20)
 
-On the simulated rig (`frontend/tests/helpers/rig.ts`: three sensors around an 8.5 × 6.2 m room with furniture,
+On the simulated rig (`processing/sim/rig.ts`: three sensors around an 8.5 × 6.2 m room with furniture,
 1–1.2 m up, tilted up to 2.5°; 24 × 301 beams; tests in `tests/calib.test.ts`, `tests/fusion-objects.test.ts`):
 
 | | result |
@@ -211,9 +211,9 @@ On the simulated rig (`frontend/tests/helpers/rig.ts`: three sensors around an 8
 | scan sets drawn per second, of 10 | — | 9.8 |
 | frame rate · main thread in long tasks | — | 59 fps · 3 % |
 
-Each sensor's pipeline runs in its own Web Worker (`pipeline/host.ts`), so the three are processed in
+Each sensor's pipeline runs in its own Web Worker (`frontend/src/worker/host.ts`), so the three are processed in
 parallel. The page keeps a mirror of each Processor's grid and objects, filled after every scan from one packed
-buffer that it hands back for the next scan (`pipeline/snapshot.ts`), and the main thread only builds the
+buffer that it hands back for the next scan (`frontend/src/worker/snapshot.ts`), and the main thread only builds the
 geometry and draws. A worker that is still busy keeps just the newest waiting scan. With the workers off (same
 GPU), 26 of the 30 scans/s are processed and the page draws 24 fps.
 

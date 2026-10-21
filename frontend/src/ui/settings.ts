@@ -1,8 +1,8 @@
 // What the viewer shows (as opposed to how scans are processed, config/): view, colours, draw mode, object
 // overlays, … Loaded from and saved to the per-browser Store; the controls change `UiSettings` in place.
-import type { ViewMode } from "../config/config";
-import { KEYS, type Store } from "../config/storage";
-import type { Mount } from "../core/types";
+import type { ViewMode } from "@mrs6000/processing/config/config";
+import { KEYS, type Store } from "./storage";
+import type { Mount } from "@mrs6000/processing/core/types";
 import type { ColorBy } from "../render/geometry";
 import type { DrawMode, GridStyle } from "../render/scene3d";
 

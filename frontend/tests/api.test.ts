@@ -22,17 +22,40 @@ describe("api client", () => {
 
   it("maps server errors to short ApiErrors", async () => {
     const api = new Api("/api", (async (url: string) =>
-      String(url).includes("control") ? json({ detail: [{ msg: "x" }] }, 422) : json({ error: "not replaying" }, 400)) as unknown as typeof fetch);
-    await expect(api.live()).rejects.toEqual(new ApiError("not replaying", 400));
+      String(url).includes("control") ? json({ detail: [{ msg: "x" }] }, 422) : json({ error: "offline" }, 400)) as unknown as typeof fetch);
+    await expect(api.record("start")).rejects.toEqual(new ApiError("offline", 400));
+    await expect(api.control("seek", 1)).rejects.toEqual(new ApiError("not replaying", 400));   // no session
+    api.session = "s1";
     await expect(api.control("fly" as never)).rejects.toThrow("invalid request");
   });
 
-  it("sends JSON bodies and builds download urls", async () => {
-    const fetchFn = vi.fn(async () => json({ source: "replay" }));
+  it("replays in a session of its own, which it ends when it goes back to live", async () => {
+    const calls: [string, string][] = [];
+    const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push([init?.method ?? "GET", String(url)]);
+      return String(url).endsWith("/sessions") ? json({ id: "s1" }) : json({ source: String(url).includes("session=s1") ? "replay" : "live" });
+    });
     const api = new Api("/api", fetchFn as unknown as typeof fetch);
+    expect((await api.replay("walk.tpc")).source).toBe("replay");
     await api.control("seek", 12);
-    expect(fetchFn).toHaveBeenCalledWith("/api/replay/control", expect.objectContaining({ method: "POST", body: '{"action":"seek","value":12}' }));
+    expect(fetchFn).toHaveBeenCalledWith("/api/sessions/s1/control", expect.objectContaining({ method: "POST", body: '{"action":"seek","value":12}' }));
+    await api.frame(0).catch(() => {});
+    expect(calls.at(-1)![1]).toBe("/api/frame?after=0&session=s1");
+    expect((await api.live()).source).toBe("live");
+    expect(calls).toContainEqual(["DELETE", "/api/sessions/s1"]);
     expect(api.downloadUrl("a b.mrsstream")).toBe("/api/recordings/a%20b.mrsstream");
+  });
+
+  it("opens the server's default session first, and falls back to live when it ended", async () => {
+    let ended = false;
+    const fetchFn = vi.fn(async (url: string) => String(url).includes("session=d")
+      ? (ended ? json({ error: "not found: session d" }, 404) : json({ source: "replay", session: "d" }))
+      : json({ source: "live", default_session: ended ? null : "d" }));
+    const api = new Api("/api", fetchFn as unknown as typeof fetch);
+    expect((await api.state()).source).toBe("replay");
+    ended = true;
+    expect((await api.state()).source).toBe("live");
+    expect(api.session).toBeNull();
   });
 });
 

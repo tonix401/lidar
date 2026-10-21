@@ -1,11 +1,11 @@
 // The Sensors section (only with several sensors): one row per sensor (colour, rate, calibrated or not, show
 // or hide it; click = the sensor the range image, the map and the statistics show), and the guided
 // calibration (fusion/calib/calibrator.ts): its steps, progress and results.
-import { css } from "../core/colors";
-import type { RGB } from "../core/types";
-import type { CalibPhase } from "../fusion/calib/calibrator";
-import type { SensorCalibration } from "../fusion/calib/rig";
-import { toParams, type Pose } from "../fusion/pose";
+import { css } from "@mrs6000/processing/core/colors";
+import type { RGB } from "@mrs6000/processing/core/types";
+import type { CalibPhase } from "@mrs6000/processing/fusion/calib/calibrator";
+import type { SensorCalibration } from "@mrs6000/processing/fusion/calib/rig";
+import { toParams, type Pose } from "@mrs6000/processing/fusion/pose";
 import { $, el } from "./dom";
 
 export interface SensorRow {
