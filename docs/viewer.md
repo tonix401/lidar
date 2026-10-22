@@ -1,4 +1,4 @@
-# The viewer page (`frontend/`)
+# The viewer page (`clients/debug/`)
 
 What the page shows and how its controls behave, then how the panel is built ([below](#how-the-panel-is-built)). The processing behind it is in [pipeline.md](pipeline.md) and [objects.md](objects.md).
 
@@ -51,11 +51,11 @@ From top to bottom:
      - *Removed by filters*: one row per active filter (intensity, outliers, seen through by another sensor (several sensors), flicker, mixed pixels, spikes, at outlines).
      - *Moving areas (people)*: roughness and flicker ([pipeline.md](pipeline.md#metrics-and-results)).
      - *Objects*: count (people), foreground beams, detection time.
-3. **Recording & replay**: the source and **● Record**. Recordings are listed by name and duration (sessions with their sensor count), with ▶ and ⋯.
+3. **Recording & replay**: the source, the source server's recording (if it is recording) and a link to its page. Recordings are listed by name and duration (sessions with their sensor count), with ▶. Below them, **Replays of other servers** (only while there are some): what another processing server is replaying, e.g. an object-detection server for its client. Clicking one watches it: the same frames, but that server drives the timeline, so the replay bar only shows the position (its buttons are off, and Space and the arrow keys do nothing) and says whose replay it is. When that server's replay ends, the page goes back to live.
    - Clicking the row plays it too.
-   - ⋯ opens a menu with the size, scan count and date, Download and Delete…; Delete asks first. Click outside or on ⋯ again to close it.
+   - Hovering a recording shows its size, scan count and date; recording, downloading and deleting are on the source server's page (the link next to the source).
    - The playing recording has a blue left edge; one being recorded has a red dot.
-4. **Sensors** (only with several sensors): a row per sensor, and **Calibrate…** ([multisensor.md](multisensor.md#calibration-where-each-sensor-stands)). Clicking a row makes it the primary sensor, which the range image, the map and the statistics show.
+4. **Sensors** (only with several sensors): a row per sensor, calibrated or not (calibrating is on the source server's page: [multisensor.md](multisensor.md#calibration-where-each-sensor-stands)). Clicking a row makes it the primary sensor, which the range image, the map and the statistics show.
 5. **View tabs**, with **Pause** for the live view. Pause is hidden during a replay, where the replay bar has play/pause.
 6. **Display**: visual settings only, and only those that change something in the current view (below).
 7. **Objects**: the object list (click to select), with a count badge in the heading.
@@ -63,8 +63,9 @@ From top to bottom:
    - Mounting, auto / manual, the preset (manual only).
    - "Filters & smoothing": the stages, including Remembered walls, Clean outlines and Object detection.
    - Reset to defaults (manual only).
+9. **Server**: the debug server's own settings, kept in its database and applied at once (`ui/serverPanel.ts`, the form from `libs/web`): its source server and token there, its name, a replay every page opens first, address and port (the page moves to the new address), its own objects and their processing settings, admin token, other allowed origins. Once the server has an admin token, the field at the top of the section must hold it (remembered in this browser). Loaded when opened; starts folded.
 
-Recording & replay, Display, Objects and Processing fold by their headings (remembered; open by default). Problems (server, sensor, processing, failed actions) are listed at the bottom of the panel, which stays visible when the panel is folded.
+Recording & replay, Display, Objects and Processing fold by their headings (remembered; open by default; Server folded by default). Problems (server, sensor, processing, failed actions) are listed at the bottom of the panel, which stays visible when the panel is folded.
 
 **Display settings per view:**
 

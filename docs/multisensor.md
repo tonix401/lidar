@@ -13,20 +13,17 @@ was measured and what is still open is [at the end](#measured-2026-10-20).
 - **Placement:** fixed, looking into the shared area from different sides, **within 10° of level** and each
   **seeing some floor** (the lowest layer looks down 13°, so about 4 m out at 1 m height). Overlap between
   sensors is what calibration and fusion use: the more of the floor and walls two sensors share, the better.
-- **Starting:** `make run ARGS="--sensor a=192.168.178.200 --sensor b=192.168.178.201 --sensor c=192.168.178.202"`,
-  or list them once in `rig.json` (repo root, gitignored) and run `make run`:
-  ```json
-  {"sensors": [{"name": "a", "ip": "192.168.178.200"}, {"name": "b", "ip": "192.168.178.201"}]}
-  ```
-  Names: letters, digits, `_` and `-`. With one sensor nothing changes (`--ip`, or the default address).
+- **Starting:** run `make run` and add them on the source server's page (**Sensors**: name, address, mount); the live
+  sensors restart with the new list, and the source server keeps it in its database (`source-server/data/source.db`,
+  gitignored). Names: letters, digits, `_` and `-`. With none added, it connects one sensor at the default address.
 - **Without sensors:** `make sim-session` writes a simulated 3-sensor session to `recordings/sim_rig3/`
-  (45 s: 3 s empty, then one person walking a loop); replay it with
-  `make run ARGS="--offline --replay recordings/sim_rig3"` and press **Calibrate…**. Its `session.json` holds the
-  true poses under `truth`, to compare with.
+  (45 s: 3 s empty, then one person walking a loop). With `make run ARGS="--offline"`, calibrate it on the source
+  server's page (**Calibration**, target "recording sim_rig3") and replay it in the viewer. Its `session.json` holds
+  the true poses under `truth`, to compare with.
 
 ## Time: one clock for all sensors
 
-`backend/src/mrs6000/clock.py`. Every CoLa layer telegram carries the device time (`time_since_startup_us`,
+`source-server/src/clock.ts` (the source server; each sensor's loop in `live/loop.ts`). Every CoLa layer telegram carries the device time (`time_since_startup_us`,
 µs since power-on). The client stamps each telegram with the host time it arrived (`Layer.received_s`).
 
 - host time − device time = clock offset + network delay, and the delay is never negative. So the **lower
@@ -50,14 +47,17 @@ was measured and what is still open is [at the end](#measured-2026-10-20).
 
 ## Calibration: where each sensor stands
 
-`processing/src/fusion/calib/`, run from the panel (**Sensors → Calibrate…**), guided by `calibrator.ts`:
+`libs/processing/src/fusion/calib/`, run by the source server (`source-server/src/calibration.ts`, on its page:
+**Calibration**), guided by `calibrator.ts`, on the live sensors or on a recorded session (from its first frame, as
+fast as the sensor workers go):
 1. **Empty scene:** nobody in the area until every sensor has its empty scene and 2 s passed without a moving
    object.
 2. **Walk:** one person walks a wide loop through the area all sensors see, for at least 30 s (and until every
    sensor tracked them at least 100 times).
-3. **Solve** (about a second) and preview: the sensors move to their new poses in the 3D view. **Use these
-   poses** stores them (`PUT /api/rig`: `rig.json` while live, the session's `session.json` while replaying
-   one), or **Discard**.
+3. **Solve** (about a second, in its own thread) and check: the page shows every sensor's empty scene from above
+   in the solved poses, where walls seen by several sensors should lie on top of each other. **Use these poses**
+   stores them (the live sensors' in the source server's database, a recording's in its `session.json`), or **Discard**. Every
+   processing server watching gets the new rig at once, and the viewer reloads it.
 
 The world frame is the first sensor's levelled frame: z up, origin on the floor below it, x its forward
 direction. The solve has three steps, each fixing what the one before can't:
@@ -97,7 +97,7 @@ Each result lists the walk's residual, the scene's median residual and overlap, 
 
 ## Objects fused from all sensors
 
-`processing/src/fusion/objects.ts`. Every sensor keeps detecting and tracking in its own range image
+`libs/processing/src/fusion/objects.ts`. Every sensor keeps detecting and tracking in its own range image
 ([objects.md](objects.md)). With several sensors:
 - each sensor's tracked objects become world points (`observe`, from the ranges the detector segmented: the
   smoothed output draws an object's mixed pixels at the wall behind it, metres away),
@@ -186,7 +186,7 @@ replays as one timeline, each scan to its sensor's feed, with the poses it was r
 
 ## Measured (2026-10-20)
 
-On the simulated rig (`processing/sim/rig.ts`: three sensors around an 8.5 × 6.2 m room with furniture,
+On the simulated rig (`libs/processing/sim/rig.ts`: three sensors around an 8.5 × 6.2 m room with furniture,
 1–1.2 m up, tilted up to 2.5°; 24 × 301 beams; tests in `tests/calib.test.ts`, `tests/fusion-objects.test.ts`):
 
 | | result |
@@ -211,9 +211,9 @@ On the simulated rig (`processing/sim/rig.ts`: three sensors around an 8.5 × 6.
 | scan sets drawn per second, of 10 | — | 9.8 |
 | frame rate · main thread in long tasks | — | 59 fps · 3 % |
 
-Each sensor's pipeline runs in its own Web Worker (`frontend/src/worker/host.ts`), so the three are processed in
+Each sensor's pipeline runs in its own Web Worker (`clients/debug/src/worker/host.ts`), so the three are processed in
 parallel. The page keeps a mirror of each Processor's grid and objects, filled after every scan from one packed
-buffer that it hands back for the next scan (`frontend/src/worker/snapshot.ts`), and the main thread only builds the
+buffer that it hands back for the next scan (`clients/debug/src/worker/snapshot.ts`), and the main thread only builds the
 geometry and draws. A worker that is still busy keeps just the newest waiting scan. With the workers off (same
 GPU), 26 of the 30 scans/s are processed and the page draws 24 fps.
 

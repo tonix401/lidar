@@ -3,8 +3,10 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "processing",
-    "server",
-    "frontend"
+    "libs/*",
+    "source-server",
+    "proc-servers/*",
+    "clients/*",
+    "server"
   ]
 }

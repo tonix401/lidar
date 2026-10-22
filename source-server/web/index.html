@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRS6000 Source</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect x=%223%22 y=%223%22 width=%2210%22 height=%2210%22 rx=%222%22 fill=%22%234aa3ff%22/%3E%3C/svg%3E">
+</head>
+<body>
+<header>
+  <div><h1>MRS6000 source</h1><div class="sub" id="subtitle">connecting…</div></div>
+  <label class="token">admin token <input id="token" type="password" autocomplete="off" placeholder="none"></label>
+</header>
+<div id="problem" class="problem" hidden></div>
+<main>
+  <section>
+    <h2>Sensors</h2>
+    <div class="scroll"><table id="sensors"><thead><tr><th>Name</th><th>Address</th><th>Mount</th><th>Stream</th><th>Clock</th><th>Device</th><th>Pose</th><th></th></tr></thead><tbody></tbody></table></div>
+    <form id="addSensor" class="inline">
+      <input name="name" placeholder="name" required pattern="[A-Za-z0-9_\-]{1,32}" title="letters, digits, _ and -, at most 32">
+      <input name="ip" placeholder="address, e.g. 192.168.178.201" required>
+      <select name="mount"><option value="auto">mount: from the device</option><option value="upright">upright</option><option value="upsidedown">upside down</option></select>
+      <button type="submit">Add sensor</button>
+    </form>
+    <p class="note">The live sensors restart when this list changes (not while recording).</p>
+  </section>
+
+  <section>
+    <h2>Recordings</h2>
+    <div class="row"><button id="recBtn">● Record</button><span id="recInfo" class="note"></span></div>
+    <div class="scroll"><table id="recordings"><thead><tr><th>Name</th><th>Length</th><th>Size</th><th>Sensors</th><th>Recorded</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Calibration</h2>
+    <p class="note">Finds where the sensors stand: first the empty scene (nobody in it), then one person walks a wide loop
+      through the area every sensor sees, for about 30 s. Each sensor's floor gives its tilt and height, the walk its position
+      and turn, and the walls seen by several sensors refine it to about a centimetre. Mount every sensor within 10° of level,
+      seeing some floor.</p>
+    <div class="row">
+      <select id="calTarget"></select>
+      <button id="calStart">Calibrate</button><button id="calCancel" hidden>Cancel</button>
+    </div>
+    <div id="calInfo" class="note"></div>
+    <div id="calResult" hidden>
+      <div class="scroll"><table id="calTable"><thead><tr><th>Sensor</th><th>Pose</th><th>Quality</th><th>Problems</th></tr></thead><tbody></tbody></table></div>
+      <p class="note">From above, every sensor's empty scene in the solved poses: walls seen by several sensors should lie on top of each other.</p>
+      <canvas id="calView" width="900" height="520"></canvas>
+      <div class="row"><button id="calAccept" class="primary">Use these poses</button><button id="calDiscard">Discard</button></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sources</h2>
+    <p class="note">What the processing servers (debug, object detection) watch: the live sensors, and the replays they started.
+      A replay is driven by the server that started it; others may watch it.</p>
+    <div class="scroll"><table id="sources"><thead><tr><th>Source</th><th>Sensors</th><th>Position</th><th>Subscribed</th></tr></thead><tbody></tbody></table></div>
+    <p class="note" id="idle" hidden></p>
+  </section>
+
+  <section>
+    <h2>Registered processing servers</h2>
+    <p class="note">A processing server says hello with its token (its <em>Token at the source</em> setting). Servers without one may
+      connect only while <em>Unregistered processing servers may connect</em> is on (Settings below).</p>
+    <div class="scroll"><table id="consumers"><thead><tr><th>Name</th><th>Token</th><th></th></tr></thead><tbody></tbody></table></div>
+    <form id="addConsumer" class="inline">
+      <input name="name" placeholder="name, e.g. lobby" required maxlength="80">
+      <button type="submit">Register</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Settings</h2>
+    <p class="note">Kept in the server's database (data/source.db) and applied at once. A new address or port moves this page there.</p>
+    <div id="settings"></div>
+  </section>
+</main>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

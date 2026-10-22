@@ -5,6 +5,11 @@ __pycache__/
 .venv/
 .pytest_cache/
 node_modules/
-frontend/dist/
-frontend/e2e/artifacts/
+dist/
+clients/debug/e2e/artifacts/
+# the servers' own state, set up per machine: their settings databases (data/), and the older files a new database
+# takes over
+source-server/data/
+source.json
+server.json
 rig.json

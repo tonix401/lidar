@@ -1,0 +1,25 @@
+{
+  "name": "@mrs6000/source-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/main.ts",
+    "build": "cd web && vite build",
+    "dev:web": "cd web && vite",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@mrs6000/processing": "workspace:*",
+    "@mrs6000/server-common": "workspace:*",
+    "@mrs6000/web": "workspace:*",
+    "@mrs6000/wire": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  }
+}

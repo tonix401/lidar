@@ -1,0 +1,51 @@
+/* the same colours as the debug page (clients/debug/src/styles.css); the theme follows the system */
+:root {
+  --bg: #0e1116; --panel: #161b22e6; --border: #2a313c; --text: #d7dde5; --muted: #8b95a3;
+  --accent: #4aa3ff; --err: #f85149; --field: #0d1117; --btn: #21262d; --hover: #2a313c; --sel: #1f2a38; --pop: #161b22f5;
+  --grid: #20262f; --axis: #3d4654; --fov: #4aa3ff14;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f7f9; --panel: #ffffffeb; --border: #d0d7de; --text: #1f2328; --muted: #59636e;
+    --accent: #0969da; --err: #cf222e; --field: #ffffff; --btn: #f3f4f6; --hover: #eaeef2; --sel: #ddf4ff; --pop: #fffffff8;
+    --grid: #e1e5ea; --axis: #c4ccd5; --fov: #0969da12;
+    color-scheme: light;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+[hidden] { display: none !important; }
+#map { position: fixed; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+#panel { position: fixed; top: 12px; left: 12px; width: 270px; max-width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; backdrop-filter: blur(6px); }
+@media (max-width: 520px) { #panel { left: 8px; right: 8px; width: auto; max-height: 45%; top: auto; bottom: 8px; } }
+h1 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+.sub, .note { color: var(--muted); font-size: 12px; }
+.sub.bad { color: var(--err); }
+.row { display: flex; align-items: center; gap: 8px; margin: 5px 0; flex-wrap: wrap; }
+.grow { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; color: var(--muted); }
+.grow input { flex: 1; min-width: 0; }
+.checks { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.checks label { display: flex; align-items: center; gap: 4px; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
+button, input, select { font: inherit; color: var(--text); background: var(--field); border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; }
+button { background: var(--btn); cursor: pointer; }
+button:hover { background: var(--hover); }
+select { max-width: 100%; }
+.orow { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 5px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.orow:hover { background: var(--hover); }
+.orow.sel { background: var(--sel); }
+.orow .nm { flex: 1; }
+.orow .mt { color: var(--muted); font-size: 12px; }
+#tip { position: fixed; pointer-events: none; background: var(--pop); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+  font-size: 12px; white-space: pre; font-variant-numeric: tabular-nums; z-index: 10; }
+details > summary { list-style: none; cursor: pointer; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary h2::before { content: "▸ "; }
+details[open] > summary h2::before { content: "▾ "; }
+.client { border-top: 1px solid var(--border); padding: 6px 0; }
+.client .nm { flex: 1; }
+.client textarea { width: 100%; font: 12px ui-monospace, monospace; color: var(--text); background: var(--field); border: 1px solid var(--border); border-radius: 6px; }
+.note.bad { color: var(--err); }

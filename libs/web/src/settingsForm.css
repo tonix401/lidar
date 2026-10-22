@@ -1,0 +1,16 @@
+/* settingsForm.ts: uses the pages' own colours (--border, --muted, --field, --err, --accent) */
+.settings-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.settings-form .sf-group { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px 10px; margin: 0; min-width: 0; }
+.settings-form legend { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 0 4px; }
+.settings-form .sf-field { margin: 6px 0; }
+.settings-form .sf-label { display: block; font-size: 12px; margin-bottom: 2px; }
+.settings-form .sf-check { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.settings-form .sf-input { display: flex; gap: 6px; }
+.settings-form .sf-input > input, .settings-form .sf-input > select { flex: 1; min-width: 0; width: auto; text-align: left; }
+.settings-form textarea { width: 100%; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+  background: var(--field); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; resize: vertical; }
+.settings-form .sf-help { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.settings-form .sf-show { padding: 1px 6px; font-size: 11px; }
+.settings-form .sf-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.settings-form .sf-status { color: var(--muted); font-size: 12px; }
+.settings-form .sf-status.bad, .settings-form .sf-error { color: var(--err); font-size: 12px; }

@@ -1,0 +1,11 @@
+{
+  "name": "example",
+  "source": { "url": "http://127.0.0.1:8000", "token": "" },
+  "port": 8020,
+  "processing": {},
+  "clients": [],
+  "open": true,
+  "adminToken": "",
+  "maxSessions": 2,
+  "origins": []
+}

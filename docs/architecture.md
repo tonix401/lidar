@@ -1,96 +1,133 @@
 # Architecture
 
-Tools for a SICK MRS6224R LiDAR at `192.168.178.200`:
-- **`backend/`:** a Python package `mrs6000`.
-  - The sensor library and a CLI: REST, CoLa A, recording a single scan.
-  - The viewer server (FastAPI): live stream, recordings, replay.
-- **`processing/`:** the package `@mrs6000/processing`, the processing model in TypeScript with no DOM: the pipeline, object detection, several sensors' fusion and calibration, and a simulator for tests (`sim/`). It runs in the page's workers today and in the Bun server next.
-- **`frontend/`:** the browser viewer (Vite + TypeScript + three.js) on top of it: the 3D view, the 2D map and the range image, highlighting, and recording/replay controls.
-- **Several sensors** ([multisensor.md](multisensor.md)): the backend runs one connection and feed per sensor on one clock; the page runs the whole pipeline per sensor and combines the results (calibration, fused objects, `processing/src/fusion/`).
-- **One Bun workspace** for the TypeScript side (`package.json`, `bun.lock` at the root).
+Tools for SICK MRS6224R LiDARs (`192.168.178.200` by default). Since 2026-10-21 they are independent projects in
+one repository: one **source server** that owns the sensors and their recordings, **processing servers** that each
+turn the source's raw scans into what their clients need, and the **clients**.
 
-The server streams raw scans; all processing ([pipeline.md](pipeline.md), [objects.md](objects.md)) runs in the browser. Recording and replay run server-side ([recordings.md](recordings.md)).
+```text
+sensors ──CoLa──▶ source-server ──/ws (source protocol)──▶ proc-servers/debug ─────────▶ clients/debug (the viewer)
+  (REST status)   live loops, clock,                     ├▶ proc-servers/object-detection ▶ clients/object-detection
+                  recorder, archive, replays,            └▶ (more object-detection servers, one per configuration)
+                  rig + calibration, its own page
+```
+
+- **The source server is the only one that talks to the sensors.** It connects every sensor (CoLa A for the scans,
+  REST for its status), maps each sensor's clock onto the host's, records on request, keeps the recordings and serves
+  them for download, and replays them for the processing servers. It owns the **rig** (where the sensors are) and
+  **calibrates** it, on its own small page.
+- **Processing servers only talk to the source**, never to each other. Each has its own settings and clients. A
+  processing server may start replays at the source and drive their timelines; another may watch such a replay by its
+  id (so far the debug server, for its page), getting the same frames while the owner keeps the timeline:
+  - `proc-servers/debug` relays the raw frames to the debug page (which runs the whole pipeline itself, stage by stage)
+    and keeps its own fused objects of the same frames next to them.
+  - `proc-servers/object-detection` runs the objects-only pipeline and serves fused world tracks (position,
+    velocity, box, class) over a WebSocket. One process per configuration: several run side by side.
+- **Clients** talk to their processing server: `clients/debug` is the viewer (3D, map, range image, every stage's
+  settings); `clients/object-detection` is a reference page for the objects protocol (a floor map).
+- **Libraries** (`libs/`) are what the projects share. Projects import only libraries and their own files, never each
+  other; libraries never import a project. `tests/layers.test.ts` (`make test-layers`) enforces it.
+- **One Bun workspace** (`package.json` with every project and library, `bun.lock` at the root): one `bun install`.
+- The old Python package (`backend/`: sensor library, CLI, the first viewer server) stays until it is removed.
+
+The protocols are in [api.md](api.md): the source protocol between the source and the processing servers (one
+WebSocket per source watched, binary frames), and each server's HTTP API and client protocol.
+
+## Projects and libraries
+
+| Folder | Package | What it is | Port (first start) |
+|---|---|---|---|
+| `source-server/` | `@mrs6000/source-server` | sensors, recordings, replays, rig, calibration; `web/`: its page | 8000 |
+| `proc-servers/debug/` | `@mrs6000/proc-debug` | raw frames for the viewer, plus its own fused objects | 8010 |
+| `proc-servers/object-detection/` | `@mrs6000/proc-objects` | fused world tracks for clients, track cache; one process per settings database `data/<name>.db` | 8020 |
+| `clients/debug/` | `@mrs6000/client-debug` | the viewer (Vite + TypeScript + three.js) | (served by the debug server) |
+| `clients/object-detection/` | `@mrs6000/client-objects` | the reference objects page (Vite + TypeScript, canvas) | (served by an object-detection server) |
+| `libs/processing/` | `@mrs6000/processing` | the processing model, no DOM: pipeline, objects, fusion, calibration, simulator (`sim/`) | |
+| `libs/wire/` | `@mrs6000/wire` | the protocols: frame codec, `Header`, rig, source messages, `WorldObject` and client options; no dependencies | |
+| `libs/server-common/` | `@mrs6000/server-common` | what the servers share: the sensor workers and `SensorSet`, the source connection and pipeline, HTTP helpers and guards, the settings database (`settings.ts`, `bun:sqlite`) and a listener that can move (`listener.ts`), errors, logging | |
+| `libs/web/` | `@mrs6000/web` | what the pages share: the settings form (drawn from the fields a server describes) | |
+
+**Settings.** Each server keeps its settings in its own SQLite database (`<project>/data/`, gitignored; `--db` names
+another) and edits them on its page through `GET`/`PUT /api/settings`: the server describes its fields
+(`libs/wire/src/settings.ts`), the page draws them (`libs/web`), and a change applies at once (another address or port
+rebinds, another source reconnects). The only command-line options are `--db` and the source's `--offline`.
 
 ## Layout
 
 ```text
-backend/
-  src/mrs6000/            sensor library + CLI (never imports server/)
-    rest.py cola.py preview.py model.py export.py env.py errors.py variables.py log.py cli.py
-    clock.py              DeviceClock: a sensor's own clock mapped onto the host's (several sensors, one timeline)
-    rig.py                the rig: sensor names, addresses, poses (rig.json, session.json)
-    recording/            .tpc / .tpc.zstd recordings
-      format.py           the file format (header, scans, zstd chunks with their index)
-      reader.py           Recording (random access, grows while being recorded)
-      recorder.py         Recorder (live scans → .tpc.zstd, writer thread)
-      catalog.py          the recordings folder, safe names from the API, convert
-      session.py          multi-sensor sessions: Session (one timeline over the files), SessionRecorder
-    server/               viewer backend
-      app.py              HTTP API (FastAPI) + static frontend; routes only call Hub methods
-      hub.py              live sensors (LiveSensor, one feed each) / replay source switching, publishing, epochs, the rig
-      player.py           playback position and transport controls (no threads, no locks)
-      feed.py frames.py status.py health.py main.py
-  tests/                  pytest with a fake CoLa sensor (TCP) and a fake REST sensor (HTTP),
-                          plus a real 24-layer scan as a fixture
-processing/               @mrs6000/processing (imported as @mrs6000/processing/<folder>/<module>)
-  src/core/               types, math, colours, formatting
-  src/config/
-    types.ts              StageDef: what a stage declares (panel section, defaults, auto/preset role)
-    stages.ts             STAGES (panel order), Config, defaultConfig()
-    presets.ts            off / light / medium / strong
-    config.ts             the public face of config/, stored-settings and typed-value helpers
-    state.ts              ConfigState: auto / manual, what is stored (no DOM)
-    auto.ts mesh.ts
-  src/pipeline/           one module per stage: its StageDef, its per-beam state, its functions
-    steps.ts              PIPELINE: the order of the stages (ingest / refine / learn)
-    processor.ts          runs PIPELINE, owns the long-lived state
-    grid.ts beamState.ts  the range image, composed of each stage's declared state
-  src/objects/            background, segmentation, Kalman, tracker, ObjectDetector (+ its StageDef)
-  src/fusion/             several sensors: pose math, fused objects (objects.ts), calibration (calib/: floor,
-                          walk, ICP, the rig solve, the guided Calibrator)
-  sim/                    synthetic ray-cast scenes (scene.ts), the multi-sensor rig (rig.ts), calibration
-                          inputs with known truth (calib.ts), .tpc and session writers (session.ts)
-  tests/                  vitest: stages, objects, fusion, calibration, golden pipeline output, layering rules
-  scripts/                simulate-session.ts (make sim-session)
-frontend/
-  index.html  src/styles.css  src/main.ts
-  src/app.ts              composition root: builds the parts, wires their callbacks, rebuild()
-  src/sensorView.ts       one sensor in the page: frame stream, its Processor (in a worker), Geometry, pose
-  src/worker/             host.ts worker.ts: each sensor's Processor in its own Web Worker, the page reads a
-                          mirror of it; snapshot.ts: what the mirror gets after each scan (MIRRORED)
-  src/render/             geometry (pure), describe (beam tooltip), scene3d (three.js), sensorModel, view2d (canvas)
-  src/api/                typed API client, frame long-poll with retry, poller
-  src/ui/                 the panel, one controller per part (see docs/viewer.md, "How the panel is built");
-                          storage.ts: per-browser settings
-  tests/                  vitest: geometry, the worker mirror, happy-dom for the panel, layering rules
-  scripts/                profile-pipeline.ts (make profile)
-  e2e/                    real backend (offline, generated recording) + built frontend in headless Chromium
+source-server/
+  src/
+    main.ts               --db and --offline, starts everything
+    live.ts live/         a live sensor: its CoLa loop in its own worker (live/worker.ts, live/loop.ts), its state
+    cola.ts rest.ts clock.ts status.ts model.ts variables.ts   the sensor's interfaces, its clock on the host's
+    recording/            .tpc / .tpc.zstd recordings and multi-sensor sessions (format, reader, recorder, catalog)
+    replay.ts player.ts   a consumer's replay: stream (paced, transport) or pull (every frame, by credit)
+    hub.ts                live sensors, replays, recorder, the rig, the calibration
+    calibration.ts calibWorker.ts   calibrating live or on a recording, the solve in its own thread
+    ws.ts                 the processing servers' connections (the source protocol)
+    http.ts store.ts settings.ts rig.ts zip.ts   the HTTP API, the settings database (sensors, consumers, the rest)
+                          and changing it live, rig merging, session downloads
+  data/                   source.db, its settings (gitignored)
+  web/                    the page: sensors, recordings, calibration (with the result from above), the active sources and who watches
+                          them, the registered processing servers, the settings
+  tests/                  vitest with a fake CoLa sensor (TCP) and a fake REST sensor (HTTP), real-scan fixtures
+proc-servers/debug/
+  src/ main.ts hub.ts view.ts feed.ts http.ts store.ts settings.ts   a View per watched source (frames → Feeds for the long-poll)
+  data/debug.db           its settings (gitignored)
+proc-servers/object-detection/
+  src/ main.ts hub.ts replay.ts batch.ts trackCache.ts ws.ts http.ts store.ts settings.ts
+  scripts/tracks.ts       a recording's tracks, the same to the byte on every run (make tracks)
+  data/<name>.db          one settings database per server (gitignored); an older config/<name>.json is taken over once
+clients/debug/            the viewer (see docs/viewer.md): src/app.ts, sensorView.ts, worker/, render/, api/, ui/; e2e/
+clients/object-detection/ src/main.ts (connection, panel), map.ts (the floor map), model.ts (the messages, tested)
+libs/processing/          src/core config pipeline objects fusion; sim/; tests/ (golden checksums, layer rules); scripts/
+libs/wire/                src/frame.ts rig.ts source.ts objects.ts settings.ts
+libs/server-common/       src/sensor/ (core, runner, worker), sensorSet.ts, sourceClient.ts, pipeline.ts, http.ts, settings.ts,
+                          listener.ts, …; scripts/ seed.ts (write settings into a database) and listen.ts (a database's address)
+libs/web/                 src/settingsForm.ts (+ .css)
+tests/layers.test.ts      the import rules between projects and libraries
 docs/                     this documentation
-recordings/               .tpc.zstd recordings (gitignored)
+recordings/               the source server's recordings (gitignored)
 ```
 
-## Layers
+## How the processing is split
 
-Lower layers never import higher ones, so the processing runs and is tested without a DOM, three.js or the
-server. Tests enforce it: `processing/tests/layers.test.ts` (inside the package, which imports no other package
-and has no DOM types), `frontend/tests/layers.test.ts` (the page imports the model only as the package) and
-`backend/tests/test_layers.py`.
+- **Per sensor first, then fusion.** Each sensor's scans go through the range-image pipeline on their own (in a
+  worker per sensor, `libs/server-common/src/sensor/`, or in the page's workers); fusion combines their outputs in
+  world coordinates ([multisensor.md](multisensor.md)).
+- **The same code everywhere.** A processing server feeds a `SensorSet` from a `SourcePipeline`
+  (`libs/server-common/src/pipeline.ts`) whether it watches the live sensors or a replay, so replayed tracks equal
+  live ones. The source's calibration runs the same `SensorSet` on live frames or on a recording.
+- **Reproducible to the byte** with every sensor on the main thread (`threaded: false`) and every frame in order
+  (pull mode): `make tracks` gives the same output on every run. With workers, how the scans of the sensors group into
+  sets depends on which worker finishes first, so two runs differ in a few sets (measured 2026-10-21 on `sim_rig3`:
+  444 vs 441 sets).
+
+## Layers inside the processing model
+
+Lower layers never import higher ones, so the processing runs and is tested without a DOM, three.js or a server.
+`libs/processing/tests/layers.test.ts` (the package imports no other package and has no DOM types) and
+`clients/debug/tests/layers.test.ts` (the page imports the model only as the package) enforce it.
 
 | Folder | May import |
 |---|---|
-| `processing/src/core/` | nothing |
-| `processing/src/{config,pipeline,objects}/` (the processing model) | each other, `core/` |
-| `processing/src/fusion/` (several sensors) | the model, `core/` |
-| `processing/sim/` | all of `processing/src/` (never the other way round) |
-| `frontend/src/render/`, `frontend/src/worker/` | the processing package |
-| `frontend/src/api/` | the package's `core/` |
-| `frontend/src/ui/` | the processing package, `render/`; `api/` only as types |
+| `libs/processing/src/core/` | nothing |
+| `libs/processing/src/{config,pipeline,objects}/` (the processing model) | each other, `core/` |
+| `libs/processing/src/fusion/` (several sensors) | the model, `core/` |
+| `libs/processing/sim/` | all of `libs/processing/src/` (never the other way round) |
+| `clients/debug/src/render/`, `clients/debug/src/worker/` | the processing package |
+| `clients/debug/src/api/` | the package's `core/` |
+| `clients/debug/src/ui/` | the processing package, `render/`; `api/` only as types |
 | `app.ts`, `sensorView.ts`, `main.ts` | everything |
-| `backend/src/mrs6000/` (library, `recording/`) | never `mrs6000.server` |
 
 ## Where a change goes
 
-- **A pipeline stage:** one module (see [pipeline.md](pipeline.md#adding-a-stage)).
-- **A panel control:** the markup in `index.html`, the controller in `ui/` that owns that part of the panel, and a callback in `app.ts` if other parts must react.
-- **The page reads another grid array** (a view, tooltip, auto mode, fusion): add it to `MIRRORED` in `frontend/src/worker/snapshot.ts`. The page sees only a mirror of each Processor, filled after every scan, because the Processor itself runs in a worker. Settings travel with each request, and calls that change state go through `ProcessorHost` (`setMount`, `setLayerBias`, `reset`), never by writing into the mirror.
-- **An API endpoint:** a `Hub` method (`server/hub.py`), a route in `server/app.py` that calls it, and the client in `frontend/src/api/client.ts`.
+- **A pipeline stage:** one module in `libs/processing/src/pipeline/` (see [pipeline.md](pipeline.md#adding-a-stage)).
+- **A panel control of the viewer:** the markup in `clients/debug/index.html`, the controller in `ui/` that owns that
+  part of the panel, and a callback in `app.ts` if other parts must react.
+- **The viewer reads another grid array** (a view, tooltip, auto mode, fusion): add it to `MIRRORED` in
+  `clients/debug/src/worker/snapshot.ts`. The page sees only a mirror of each Processor, filled after every scan.
+- **Something about the sensors, recordings or the rig:** the source server (`hub.ts` method, a route in `http.ts`,
+  and its page in `web/`); if the processing servers need it, a message in `libs/wire/src/source.ts`.
+- **Another kind of client output:** a new processing server in `proc-servers/`, built on `SourcePipeline`, with
+  its own client protocol in `libs/wire/` if others are to use it.
+- **A new client:** a folder in `clients/` that talks to one processing server.

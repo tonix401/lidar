@@ -27,7 +27,7 @@ The dimensions come from the MRS6000 operating instructions, figure 20 (Maßzeic
 
 **Elevation sign.** Measured from the housing, the drawing's beam fan rises from about −1.5° to +13.5° above the horizontal axis, with the head up. With the viewer's "upright" mount the device reports −13.19° to +1.19°, mostly downward: the same 14.4° fan, mirrored. So in the data, "upright" means the window is at the bottom, and the viewer's "upside down" (z mirrored, [above](#the-sensor)) means the window is at the top.
 
-**The 3D model** (`frontend/src/render/sensorModel.ts`) is a simple housing built to these dimensions, with the head pointing +z. `Scene3D.buildGuides` mirrors it in z by `-mountZSign(mount)` (`pipeline/rays.ts`), the opposite of the rays, because of the elevation sign above. Use a mirror (`scale.z`), not a rotation: the data flips only z. The model is symmetric left to right, so a rotation looks the same, but it is a different transform from the data's. Estimated from the drawing rather than read off it: the window radii (75 at the body top, 42 at the cap), the corner cut-offs and the connector heights.
+**The 3D model** (`clients/debug/src/render/sensorModel.ts`) is a simple housing built to these dimensions, with the head pointing +z. `Scene3D.buildGuides` mirrors it in z by `-mountZSign(mount)` (`pipeline/rays.ts`), the opposite of the rays, because of the elevation sign above. Use a mirror (`scale.z`), not a rotation: the data flips only z. The model is symmetric left to right, so a rotation looks the same, but it is a different transform from the data's. Estimated from the drawing rather than read off it: the window radii (75 at the body top, 42 at the cap), the corner cut-offs and the connector heights.
 
 ## Interfaces
 

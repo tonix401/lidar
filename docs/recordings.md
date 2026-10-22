@@ -1,11 +1,14 @@
 # Recording and replay
 
-These run server-side (`backend/src/mrs6000/recording/` for the format, reading and recording; `server/player.py` and `server/hub.py` for playback), with controls on the page.
+The source server records and keeps them (`source-server/src/recording/` for the format, reading and recording;
+`replay.ts` and `player.ts` for playback), with controls on its page; the viewer replays them through the debug
+server, and an object-detection server computes their tracks (pull mode, [api.md](api.md#the-source-protocol-ws-version-1)).
 
-- **Recording:** the **● Record** button in the panel saves the *live* stream to `recordings/rec_YYYYmmdd_HHMMSS.tpc.zstd`, zstd-compressed (lossless) to about 7.5 MB per minute. It keeps recording while you watch a replay.
+- **Recording:** the **● Record** button on the source server's page saves the *live* stream to `recordings/rec_YYYYmmdd_HHMMSS.tpc.zstd`, zstd-compressed (lossless) to about 7.5 MB per minute. It keeps recording while you watch a replay.
   - A writer thread compresses in chunks of 25 scans (2.5 s), so the live stream never waits on it. A file being recorded can be replayed up to its last complete chunk, and a crash loses at most the last 2.5 s.
 - **Compress / decompress files:** `mrs6000 decompress x.tpc.zstd` (or plain `zstd -d`) gives `x.tpc`; `mrs6000 compress x.tpc` gives `x.tpc.zstd` again. Both keep the input. Replay reads both.
-- **Recordings list:** name and duration, ▶ to play (or click the row), ⋯ for the size, scan count, date, Download and Delete ([viewer.md](viewer.md#panel)).
+- **Recordings list:** on the source server's page with length, size, sensors and date, Download and Delete; in the
+  viewer, name and duration, ▶ to play (or click the row), the size in its tooltip ([viewer.md](viewer.md#panel)).
 - **Transport bar** (shown while replaying):
   - Step back / play-pause / step forward, a seek slider, speed 0.25–4×, loop, and "● Live".
   - Keys: Space = play/pause, ←/→ = step.
@@ -15,7 +18,7 @@ The HTTP endpoints for all of this are in [api.md](api.md).
 
 ## Sessions
 
-With several live sensors, **● Record** records all of them into one folder (`backend/src/mrs6000/recording/session.py`):
+With several live sensors, **● Record** (on the source server's page) records all of them into one folder (`source-server/src/recording/session.ts`):
 
 ```text
 rec_20261020_120000/

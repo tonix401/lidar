@@ -1,4 +1,4 @@
-# Viewer pipeline (`processing/src/pipeline/`)
+# Viewer pipeline (`libs/processing/src/pipeline/`)
 
 All processing runs in the browser. Object detection is described separately in [objects.md](objects.md).
 
@@ -128,7 +128,7 @@ Columns of 4 × 2 beams radiating from the sensor, each with up to 4 depth slots
 
 ## Not done yet: the echo test
 
-The device runs on the last echo. Record the same walk with `mrs6000 echo-filter first` and with `last` (no `--save`; restore afterwards) and compare *flicker* and the outline. Streaming several echoes (`cola.py` parses them, `recording/format.py` and `server/frames.py` only send `echoes[0]`) is only worth it if the difference is large. Recording more echoes would also need a `.tpc` format change ([recordings.md](recordings.md)).
+The device runs on the last echo. Record the same walk with `mrs6000 echo-filter first` and with `last` (no `--save`; restore afterwards) and compare *flicker* and the outline. Streaming several echoes (`source-server/src/cola.ts` parses them, `recording/format.ts` and the frames it sends keep only `echoes[0]`) is only worth it if the difference is large. Recording more echoes would also need a `.tpc` format change ([recordings.md](recordings.md)).
 
 ## Views and panel
 

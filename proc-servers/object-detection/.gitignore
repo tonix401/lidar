@@ -1,0 +1,4 @@
+cache/
+config/*.json
+!config/example.json
+data/

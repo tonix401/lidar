@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRS6000 Live View</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%234aa3ff%22/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="view"></div>
+<canvas id="view2d" hidden></canvas>
+<div id="tip" hidden></div>
+<div id="panel">
+  <div class="head">
+    <div><h1 id="title">MRS6000</h1><div class="sub" id="subtitle">connecting…</div></div>
+    <button id="panelToggle" title="hide the panel (H)" aria-expanded="true">‹</button>
+  </div>
+  <div class="body">
+
+  <details class="fold" id="streamBox">
+    <summary><span class="dot" id="sumStreamDot"></span>Stream <span class="val" id="sumStream">–</span></summary>
+    <div class="row"><span><span class="dot" id="streamDot"></span>Scan rate</span><span id="rate">–</span></div>
+    <div class="row"><span>Points / scan</span><span id="points">–</span></div>
+    <div class="row"><span>Layers × beams</span><span id="geom">–</span></div>
+  </details>
+  <details class="fold" id="deviceBox">
+    <summary><span class="dot" id="sumDeviceDot"></span>Device <span class="val" id="sumDevice">–</span></summary>
+    <div class="row"><span><span class="dot" id="devDot"></span>Status</span><span id="devStatus">–</span></div>
+    <div class="row"><span>System / APD temp</span><span id="temps">–</span></div>
+    <div class="row"><span>Supply</span><span id="volt">–</span></div>
+    <div class="row"><span>Mirror</span><span id="mirror">–</span></div>
+    <div class="row"><span>Window</span><span id="window">–</span></div>
+  </details>
+  <details class="fold" id="statsBox">
+    <summary>Statistics <span class="val" id="sumStats">per scan, live</span></summary>
+    <div id="statsList"></div>
+  </details>
+
+  <details class="sect" id="secRec" open><summary><h2>Recording &amp; replay</h2></summary>
+  <div class="row"><span><span id="srcLabel">live sensor</span> <span class="info" tabindex="0" role="button" data-tip="The source server records the live sensors, keeps the recordings and calibrates the rig: open its page to record, download or delete. Click a recording to replay it here; hover it for its size.">i</span></span><a id="sourceLink" target="_blank" rel="noopener" hidden>source server ↗</a></div>
+  <div id="recInfo" class="note2"></div>
+  <div id="recList"></div>
+  <h3 id="otherHead" hidden>Replays of other servers <span class="info" tabindex="0" role="button" data-tip="Replays another processing server (e.g. an object-detection server for its client) is running. Click one to watch it here: the frames are the same, and that server drives the timeline.">i</span></h3>
+  <div id="otherList"></div>
+  </details>
+
+  <details class="sect" id="secSensors" open hidden><summary><h2>Sensors <span class="val" id="sensorCount"></span> <span class="info" tabindex="0" role="button" data-tip="Several sensors, each processed on its own and drawn where it stands in the world (the first one is the origin). Click a row to show that sensor in the range image, the map and the statistics; the box shows or hides it in the 3D view. Where they stand comes from the source server, which calibrates them (its page).">i</span></h2></summary>
+  <div id="sensorList"></div>
+  </details>
+
+  <div class="tabbar">
+    <div class="tabs" id="modeBtns">
+      <button data-mode="3d" class="on">3D</button><button data-mode="top">2D map</button><button data-mode="image">Range image</button>
+    </div>
+    <button id="pause" title="pause the live view (space)">Pause</button>
+  </div>
+
+  <details class="sect" id="secDisplay" open><summary><h2>Display <span class="info" tabindex="0" role="button" id="hint" data-tip="">i</span></h2></summary>
+  <div class="row" data-views="3d top"><label for="draw">Draw</label>
+    <select id="draw">
+      <option value="surface">surface</option>
+      <option value="surface+points" selected>surface + points</option>
+      <option value="points">points</option>
+      <option value="lines">layer lines</option>
+      <option value="vlines">vertical lines</option>
+      <option value="grid">layer + vertical lines</option>
+      <option value="points+lines">points + layer lines</option>
+    </select></div>
+  <div class="row"><label for="colorBy">Color by</label>
+    <select id="colorBy">
+      <option value="uniform">uniform (shaded)</option>
+      <option value="rssi">RSSI (intensity)</option>
+      <option value="dist" selected>Distance</option>
+      <option value="mainDist">Distance to main sensor</option>
+      <option value="height">Height</option>
+      <option value="layer">Layer</option>
+      <option value="noise">Noise σ (history)</option>
+      <option value="conf">Confidence (history)</option>
+      <option value="area">Area class (adaptive)</option>
+      <option value="cell">Radial cell (experimental)</option>
+      <option value="sensor">Sensor (several sensors)</option>
+    </select></div>
+  <div id="legendBox">
+    <div id="legend"></div>
+    <div class="legend-labels"><span id="legMin">–</span><span id="legMax">–</span></div>
+  </div>
+  <div class="row" data-views="3d"><span><label for="fillWalls">Walls behind moving objects</label> <span class="info" tabindex="0" role="button" data-tip="Where a moving object (a person) hides a remembered wall (Processing → Remembered walls), that wall is drawn as well, a little darker, so walls don&#x27;t show a shadow of the person.">i</span></span><input type="checkbox" id="fillWalls" checked></div>
+  <div class="row" data-views="3d" hidden><span><label for="mergeSurfaces">One wall where sensors overlap</label> <span class="info" tabindex="0" role="button" data-tip="Several sensors: where two see the same wall, floor or furniture, each draws it a few mm to a cm apart and the two surfaces interleave. This moves their points onto one fused surface (the average of what each sensor sees there, close and frontal views counting most) and draws each spot only from the sensor that sees it best. Only static surfaces; people are drawn as each sensor sees them. Updated about once a second.">i</span></span><input type="checkbox" id="mergeSurfaces" checked></div>
+  <div class="row" data-views="3d top"><label for="layerSel">Layer</label><select id="layerSel"><option value="-1">all</option></select></div>
+  <div class="row" data-views="3d top" data-draw="points"><label for="size">Point size <span class="v" id="sizeVal">1 px</span></label><input id="size" type="range" min="0.5" max="6" step="0.5" value="1"></div>
+  <div class="row" data-views="3d top"><span><label for="gridStyle">Grid</label> <span class="info" tabindex="0" role="button" data-tip="Distance guides on the ground: range rings around the sensor (every 5 m, 10 m beyond 60 m), or a square grid along the axes (1 m out to 20 m Max range, then 5 m, then 10 m; every 5th line stronger). With several sensors both are around the world origin (the first sensor, on the floor).">i</span></span>
+    <select id="gridStyle"><option value="rings">range rings</option><option value="square">square grid</option></select></div>
+  <div class="row" data-views="3d top"><span><label for="range">Max range</label> <span class="info" tabindex="0" role="button" data-tip="Points further away than this are not drawn. Type a value and press Enter (1–250 m).">i</span></span>
+    <span class="num"><input id="range" type="number" min="1" max="250" step="any" value="60"> m</span></div>
+  <div id="meshStage" data-views="3d top" data-draw="mesh"></div>
+  <h3 data-views="3d top image">Objects in the view</h3>
+  <div class="checks">
+    <span class="info" tabindex="0" role="button" id="objHelp" data-tip="Highlight: each tracked object in its own colour. Dim background: everything else darker. Boxes, labels and trails: overlays per object. Follow selected: keep the selected object centred (click an object or a row in the list to select it).">i</span>
+    <label><input type="checkbox" id="oHighlight" checked> highlight objects</label>
+    <label><input type="checkbox" id="oDim" checked> dim background</label>
+    <label><input type="checkbox" id="oBoxes" checked> boxes</label>
+    <label><input type="checkbox" id="oLabels" checked> labels</label>
+    <label data-views="3d top"><input type="checkbox" id="oTrails" checked> trails</label>
+    <label data-views="3d top"><input type="checkbox" id="oFollow"> follow selected</label>
+  </div>
+  <div class="btns" id="cam3d" data-views="3d">
+    <button id="vPersp">Perspective</button><button id="vTop">Top</button><button id="vSide">Side</button><button id="vFront">Front</button>
+  </div>
+  <div class="btns" data-views="top image"><button id="fit2d" title="double-click the view does the same">Fit view</button></div>
+  <div class="row" style="margin-top:10px"><label for="theme">Theme</label>
+    <select id="theme"><option value="dark">dark</option><option value="light">light</option><option value="system">follow the system</option></select></div>
+  </details>
+
+  <details class="sect" id="secObjects" open><summary><h2>Objects <span class="val" id="objCount"></span></h2></summary>
+  <div id="objInfo" class="note2"></div>
+  <div id="objList"></div>
+  </details>
+
+  <details class="sect" id="secProc" open><summary><h2>Processing</h2></summary>
+  <div class="row"><span><label for="mount">Mounting</label> <span class="info" tabindex="0" role="button" data-tip="Upright: sensor standing normally (negative elevation = down). Upside down: the sensor is on its head (device parameter UpsideDown); up and down swap. The device already reports left/right in world terms, so only the height flips, in the 3D view, the map and the range image.">i</span></span>
+    <select id="mount"><option value="upright">upright</option><option value="upsidedown">upside down</option></select></div>  <div class="row"><span><label for="mode">Mode</label> <span class="info" tabindex="0" role="button" id="autoInfo" data-tip="">i</span></span>
+    <select id="mode"><option value="auto">auto</option><option value="manual">manual</option></select></div>
+  <div class="row"><label for="preset">Preset</label>
+    <select id="preset">
+      <option value="off">off</option><option value="light">light</option>
+      <option value="medium">medium</option><option value="strong">strong</option>
+      <option value="custom" disabled>custom</option>
+    </select></div>
+  <h3>Filters &amp; smoothing</h3>
+  <div id="stages"></div>
+  <div id="objStage"></div>
+  <div class="btns" style="margin-top:8px"><button id="resetCfg">Reset to defaults</button></div>
+  </details>
+
+  <details class="sect" id="secServer"><summary><h2>Server <span class="info" tabindex="0" role="button" data-tip="The debug server's own settings: its source server, where it listens, its own fused objects, the replay every page opens first, access. Kept in its database and applied at once; a new address or port moves this page there.">i</span></h2></summary>
+  <div class="row"><label for="adminToken">Admin token</label><input id="adminToken" type="password" autocomplete="off" placeholder="none"></div>
+  <div id="serverSettings"></div>
+  </details>
+
+  </div>
+  <div id="err"></div>
+  <div id="panelResize" title="drag to resize the panel (double-click: default width)" role="separator" aria-orientation="vertical"></div>
+</div>
+<div id="labels"></div>
+<div id="transport" hidden>
+  <span id="tFile"></span>
+  <button id="tStepB" title="previous scan (←)">⏮</button><button id="tPlay" title="play / pause (space)">⏸</button><button id="tStepF" title="next scan (→)">⏭</button>
+  <input type="range" id="tSeek" min="0" max="0" value="0" step="1">
+  <span id="tTime">0:00 / 0:00</span>
+  <select id="tSpeed" title="playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select>
+  <label title="start again at the end"><input type="checkbox" id="tLoop" checked> loop</label>
+  <span id="tOwner" class="note2" hidden></span>
+  <button id="tLive" title="back to the live sensor">● Live</button>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
