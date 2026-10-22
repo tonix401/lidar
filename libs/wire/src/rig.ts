@@ -1,5 +1,5 @@
-// The rig: where the sensors are. The source server owns it (source.json for the live sensors, the `rig` key of a
-// session's session.json for a recording) and sends it to every processing server with the frames.
+// The rig: where the sensors are. The source server owns it (its settings database for the live sensors, each
+// file's header for a recording) and sends it to every processing server with the frames.
 //
 //   {"sensors": [{"name": "a", "pose": {"x": 0, "y": 0, "z": 1.1, "yaw": 0, "pitch": 0, "roll": 0},
 //                 "time_offset_s": 0.0, "calibrated": "2026-10-20T12:00:00", "quality": {...}}]}

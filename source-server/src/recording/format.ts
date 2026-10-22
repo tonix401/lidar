@@ -1,7 +1,7 @@
 // The recording format: temporal point clouds.
 //
-// x.tpc: one JSON header line {layers, beams, start_azimuth_deg, step_deg, elev[layers*beams], upside_down?, sensor?},
-// then fixed-size scans: float64 unix time, uint16 raw distance (units of 12.5 mm, 0 = invalid), uint16 rssi
+// x.tpc: one JSON header line {layers, beams, start_azimuth_deg, step_deg, elev[layers*beams], upside_down?, sensor?,
+// index?, created?, rig?, truth?} (RecordingMeta below: what a session needs about its sensors), then fixed-size scans: float64 unix time, uint16 raw distance (units of 12.5 mm, 0 = invalid), uint16 rssi
 // — layer-major, little endian. Scan k sits at header_end + k * frame_size. ~88 kB per scan (~53 MB per minute
 // at 10 Hz).
 //
@@ -11,9 +11,25 @@
 // m float64 scan times (m = 0 for the header). Chunks are written whole, so readers index complete chunks only.
 // ~13 kB per scan (~7.5 MB per minute, indoor scene). The same format the Python backend wrote.
 import { DIST_UNIT_MM, type Frame, type Header } from "@mrs6000/wire/frame";
+import type { Pose, RigSensor } from "@mrs6000/wire/rig";
 import { beamCount, elevations, type Scan } from "../model";
 
 export { DIST_UNIT_MM, type Frame, type Header };
+
+/** what a recording's header says beyond its scan layout: its place in a multi-sensor session (index 0: the first
+ *  sensor, the world's origin), when the recording started, where the sensor stood (its rig entry: pose,
+ *  time_offset_s, calibrated, quality; written when the session is recorded and when it is calibrated), and for a
+ *  simulated sensor its true pose. The sensor's name stays in the layout header (`sensor`). */
+export interface RecordingMeta { index?: number; created?: number; rig?: Omit<RigSensor, "name">; truth?: Pose }
+
+export const META_KEYS = ["index", "created", "rig", "truth"] as const;
+
+/** a stored header split into the scan layout and the recording's metadata */
+export function splitHeader(stored: Record<string, unknown>): { hdr: Header; meta: RecordingMeta } {
+  const hdr = { ...stored } as Header, meta: Record<string, unknown> = {};
+  for (const k of META_KEYS) if (k in hdr) { meta[k] = hdr[k]; delete hdr[k]; }
+  return { hdr, meta: meta as RecordingMeta };
+}
 
 export const CHUNK_FRAMES = 25;          // 2.5 s at 10 Hz: what a crash can lose, how far a file being recorded lags
 export const LEVEL = 19;                 // ~14 ms per scan on a desktop core, off the main thread

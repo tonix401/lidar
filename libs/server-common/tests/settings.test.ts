@@ -1,11 +1,11 @@
 // The settings database, the fields a page edits, and moving where a server listens.
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SettingField } from "@mrs6000/wire/settings";
 import { describe, expect, it } from "vitest";
 import { Listener } from "../src/listener";
-import { changedKeys, checkPatch, loadSettings, seedSettings, setPath, SettingsDb, settingsView } from "../src/settings";
+import { changedKeys, checkPatch, loadSettings, seedSettings, setPath, SettingsDb, settingsView, writeEmpty } from "../src/settings";
 
 const dir = () => mkdtempSync(join(tmpdir(), "settings-"));
 
@@ -25,12 +25,16 @@ describe("settings database", () => {
     db.save({ a: 3 });
     expect(db.load()).toEqual({ a: 3 });
   });
-  it("an older JSON file is taken over once, while the database is empty", () => {
-    const d = dir(), json = join(d, "old.json"), path = join(d, "a.db");
-    writeFileSync(json, JSON.stringify({ port: 9000 }));
-    expect(loadSettings(new SettingsDb(path), { port: 1, open: true }, [join(d, "missing.json"), json])).toEqual({ port: 9000, open: true });
-    writeFileSync(json, JSON.stringify({ port: 9999 }));
-    expect(loadSettings(new SettingsDb(path), { port: 1, open: true }, [json]).port).toBe(9000);      // the database wins now
+  it("a new database starts as a copy of the template; an existing one is never replaced", () => {
+    const d = dir(), template = join(d, "empty.db"), path = join(d, "data", "a.db");
+    writeEmpty(template, { port: 9000, open: true });
+    expect(loadSettings(new SettingsDb(path, template), { port: 1, open: false, host: "x" })).toEqual({ port: 9000, open: true, host: "x" });
+    const db = new SettingsDb(path, template);
+    db.save({ port: 9100 });
+    db.close();
+    writeEmpty(template, { port: 9999 });
+    expect(loadSettings(new SettingsDb(path, template), { port: 1 }).port).toBe(9100);    // its own from now on
+    expect(loadSettings(new SettingsDb(join(d, "b.db"), join(d, "missing.db")), { port: 1 }).port).toBe(1);   // no template: the defaults
   });
   it("seeded before a server starts", () => {
     const path = join(dir(), "a.db");

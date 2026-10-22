@@ -5,7 +5,7 @@ import { shortError } from "@mrs6000/processing/core/format";
 export type ProblemName = "server" | "sensor" | "replay" | "processing" | "action";
 
 const PANEL_TEXT: Partial<Record<ProblemName, (msg: string) => string>> = {
-  server: () => "viewer server unreachable – is the backend running? (retrying)",
+  server: () => "debug server unreachable – is it running? (retrying)",
   processing: msg => `processing error: ${msg}`,
 };
 

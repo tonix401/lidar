@@ -2,14 +2,14 @@
 // session.ts) from the source server; in the page, the sensors are listed, the source server calibrates them from
 // the empty scene and one walk (as its page does), the page picks up the poses, and the walker is one fused object.
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { compose, fromParams, invert, poseError, type PoseParams } from "@mrs6000/processing/fusion/pose";
+import { compose, fromParams, invert, poseError } from "@mrs6000/processing/fusion/pose";
 import { RIG3, ROOM } from "@mrs6000/processing/sim/rig";
-import { writeSession } from "@mrs6000/processing/sim/session";
+import { readTpcHeader, writeSession } from "@mrs6000/processing/sim/session";
 import { browserExecutable, startServers } from "./browser";
 
 const ROOT = resolve(process.cwd(), "../..");
@@ -54,14 +54,12 @@ describe("several sensors in a browser", () => {
     await call("POST", "/api/calibration", { action: "accept" });
     await page.waitForFunction(() => /calibrated/.test(document.getElementById("sensorList")!.textContent!), null, { timeout: 10_000 });
     await shot("rig-calibrated");
-    const meta = JSON.parse(readFileSync(join(dir, "sim_rig3", "session.json"), "utf8")) as
-      { rig: { sensors: { name: string; pose: PoseParams }[] }; truth: { name: string; pose: PoseParams }[] };
-    const first = meta.truth[0].pose, world = invert(fromParams({ ...first, z: 0, pitch: 0, roll: 0 }));   // a's levelled frame
-    for (const s of meta.rig.sensors) {
-      const truth = compose(world, fromParams(meta.truth.find(t => t.name === s.name)!.pose));
-      const e = poseError(fromParams(s.pose), truth);
-      expect(e.dist, s.name).toBeLessThan(0.05);
-      expect(e.angle, s.name).toBeLessThan(0.5);
+    const hdrs = ["a", "b", "c"].map(n => readTpcHeader(join(dir, "sim_rig3", `${n}.tpc`)));   // each file's header: its pose, its truth
+    const world = invert(fromParams({ ...hdrs[0].truth!, z: 0, pitch: 0, roll: 0 }));               // a's levelled frame
+    for (const h of hdrs) {
+      const e = poseError(fromParams(h.rig!.pose!), compose(world, fromParams(h.truth!)));
+      expect(e.dist, h.sensor).toBeLessThan(0.05);
+      expect(e.angle, h.sensor).toBeLessThan(0.5);
     }
   });
 

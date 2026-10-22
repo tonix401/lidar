@@ -5,8 +5,8 @@
 //   bun proc-servers/debug/src/main.ts --db other.db    another settings database
 //
 // Everything else is a setting, in the database and in the viewer's Server section (store.ts, settings.ts): the
-// source server, where it listens, its own objects, a replay every page opens first, access. A new database takes
-// over an older config/debug.json.
+// source server, where it listens, its own objects, a replay every page opens first, access. A new database starts
+// as a copy of empty.db.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -39,7 +39,7 @@ export async function main(argv = Bun.argv.slice(2)): Promise<void> {
   let args: Args, store: Store;
   try {
     args = parse(argv);
-    store = new Store(args.db, [resolve(HERE, "config/debug.json")]);
+    store = new Store(args.db, resolve(HERE, "empty.db"));
   } catch (e) {
     console.error(`error: ${describeError(e)}`);
     process.exit(2);

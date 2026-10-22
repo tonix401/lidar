@@ -1,7 +1,7 @@
 // Recordings: the format, random access, the recorder, conversion, and compatibility with files written by the
 // Python backend (tests/fixtures/python_*, with what it served for them in python_expected.json).
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import { convert, listRecordings, recordingPath } from "../src/recording/catalog
 import { frameBytes, frameValues, streamChunk, streamHeader, zstdEntry } from "../src/recording/format";
 import { Recording } from "../src/recording/reader";
 import { Recorder } from "../src/recording/recorder";
-import { Session } from "../src/recording/session";
+import { Session, SessionRecorder, storeSessionRig } from "../src/recording/session";
 import { FIXTURES, makeScan, realScan, waitUntil, writeRecording } from "./helpers";
 
 let dir = "";
@@ -160,6 +160,39 @@ describe("recordings", () => {
     const p = writeRecording(join(dir, "a.tpc"));
     writeFileSync(join(dir, "b.tpc.zstd"), Bun.zstdCompressSync(readFileSync(p)));
     expect(() => new Recording(join(dir, "b.tpc.zstd"))).toThrow(/without the scan index/);
+  });
+});
+
+describe("sessions", () => {
+  const POSE = { x: 1, y: 2, z: 1, yaw: 30, pitch: 0, roll: 0 };
+
+  it("each file's header names its sensor, its place and its pose; poses are stored back into the headers", async () => {
+    const rec = new SessionRecorder(dir, () => ({ sensors: [{ name: "b", pose: POSE, ip: "10.0.0.1", mount: "auto" }] }));
+    const folder = await rec.start(["b", "a"]);                                // the registry's order: b is the first
+    for (let k = 0; k < 30; k++) for (const n of ["b", "a"]) rec.write(n, makeScan(3, 5, () => 1000), 1000 + k * 0.1 + (n === "a" ? 0.05 : 0));
+    await rec.stop();
+    expect(readdirSync(folder).sort()).toEqual(["a.tpc.zstd", "b.tpc.zstd"]);   // no session.json
+    open(new Session(folder), s => {
+      expect([s.sensors, s.count, s.recs.map(r => r.meta.index)]).toEqual([["b", "a"], 60, [0, 1]]);
+      expect(s.rig).toEqual({ sensors: [{ name: "b", pose: POSE }, { name: "a" }] });   // the pose, not the registry's address
+      expect(s.recs[0].hdr).not.toHaveProperty("rig");                          // the layout header stays a layout
+    });
+    await storeSessionRig(folder, { sensors: [{ name: "b", pose: POSE }, { name: "a", pose: POSE, calibrated: "2026-10-22" }] });
+    open(new Session(folder), s => {
+      expect(s.rig.sensors[1]).toEqual({ name: "a", pose: POSE, calibrated: "2026-10-22" });
+      expect([s.count, s.frame(59).sensor]).toEqual([60, "a"]);                 // the scans are untouched
+    });
+    expect(readdirSync(folder).sort()).toEqual(["a.tpc.zstd", "b.tpc.zstd"]);   // no temporary file left
+  });
+
+  it("while it is being recorded, a session shows only what every sensor has reached", () => {
+    const folder = join(dir, "rec_1");
+    mkdirSync(folder);
+    writeRecording(join(folder, "a.tpc"), 5, { t0: 1000 });                   // 1000.0 … 1000.4
+    writeRecording(join(folder, "b.tpc"), 3, { t0: 1000.05 });                // 1000.05 … 1000.25
+    open(new Session(folder, () => true), s => expect(s.count).toBe(6));      // a's up to 1000.25, all of b's
+    open(new Session(folder), s => expect([s.count, s.sensors]).toEqual([8, ["a", "b"]]));   // no index: by name
+    expect(() => new Session(dir)).toThrow(/not a session/);                   // a folder without .tpc files
   });
 });
 

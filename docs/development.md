@@ -1,12 +1,11 @@
 # Development notes
 
-- **Environment:** plain Python venv in `backend/.venv` and one Bun workspace (`processing/`, `clients/debug/`; `bun.lock` at the root), nothing system-specific. Bun is also the runtime of the tools and tests (`bun --bun run …`). `shell.nix` is only a convenience for NixOS. There, Playwright's downloaded Chromium does not run, so the system `chromium` is used. Python must be 3.14 or newer for the standard-library `compression.zstd` ([setup.md](setup.md)).
+- **Environment:** one Bun workspace (every library, server and client; `bun.lock` at the root), nothing system-specific. Bun is also the runtime of the tools and tests (`bun --bun run …`). `shell.nix` is only a convenience for NixOS (pinned nixpkgs). There, Playwright's downloaded Chromium does not run, so the system `chromium` is used.
 - **Tests:** `make test` runs everything (counts as of 2026-10-22).
   - **Source server** (`source-server/tests/`, 53): a fake CoLa sensor (TCP) and a fake REST sensor (HTTP), so no hardware is needed; the recording format against files the Python backend wrote; live and replay consumers over a real port; the guards; the settings (applied, saved, a refused change changing nothing); calibrating a simulated recorded rig.
   - **Processing servers** (`proc-servers/*/tests/`): each against a real source server started as its own process (`startSource`, `libs/server-common/src/testing.ts`, with a settings database of its own seeded first), since the projects never import each other; each also changes its settings live.
   - **Libraries:** `libs/wire` (the frame codec, client options), `libs/server-common` (the sensor workers, `SensorSet`, errors and health, the settings database and checks, moving where a server listens), `libs/web` (the settings form, happy-dom).
   - **The import rules** (`tests/layers.test.ts`, `bun test ./tests/layers.test.ts`; the `./` matters: without it Bun treats `tests` as a filter and runs every test file of the repository in its own runner).
-  - **Backend:** 79 pytest tests, while `backend/` exists.
   - **Processing** (`libs/processing/tests/`): vitest on synthetic ray-cast scenes (`libs/processing/sim/scene.ts`, a multi-sensor rig in `sim/rig.ts`) for the pipeline, objects, fusion and calibration.
   - **Frontend** (`clients/debug/tests/`): geometry, the worker mirror, and happy-dom tests for the panel (`tests/ui.test.ts` loads the real `index.html`; jsdom does not run under Bun).
     - `libs/processing/tests/golden.test.ts` snapshots checksums of the whole pipeline's output on a synthetic walk (5 configurations). A refactor must leave them unchanged; update them (`bun --bun x vitest run -u` in `processing/`) only for an intended change in behaviour, and say so in the commit.
@@ -48,7 +47,7 @@
 
 The numbers in [pipeline.md](pipeline.md) and [objects.md](objects.md) came from a small Node script (not kept in the repository) that runs the browser pipeline on a recording:
 - **Script:** a TypeScript file that imports `Processor`, `autoConfig` and `estimateNoise` from `@mrs6000/processing` (plus `foreground`/`fgTol` for ground truth), run with `bun replay.ts` from inside the workspace.
-- **Read** the recording: an uncompressed `.tpc` (decompress with `mrs6000 decompress` first). Parse the JSON header line, then each scan: float64 time, uint16 distances × 12.5 mm, uint16 RSSI ([recordings.md](recordings.md)). Build the frame `[distance m | rssi | elevation deg]` that `Processor.ingest` takes, and pass the scan's own timestamp as `meta.ts`.
+- **Read** the recording: an uncompressed `.tpc` (`zstd -d` a `.tpc.zstd` first). Parse the JSON header line, then each scan: float64 time, uint16 distances × 12.5 mm, uint16 RSSI ([recordings.md](recordings.md)). Build the frame `[distance m | rssi | elevation deg]` that `Processor.ingest` takes, and pass the scan's own timestamp as `meta.ts`.
 - **Run auto mode like the page:** start with `autoConfig(defaults, 0.02)`, and every 10 scans re-derive it from `estimateNoise(grid)`, keeping the user stages.
 - **Score after a 3 s warm-up**, e.g. ghosts against offline ground truth (the empty scene = each beam's 85th-percentile range over the whole recording), roughness and flicker (`Processor.stats`), or spikes (triangles within ~6° of edge-on next to objects, from `buildGeometry`).
 - **Look at the result:** write small PPM images of the range image (a few lines of code, no dependencies) to see where a rule fires.

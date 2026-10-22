@@ -2,21 +2,23 @@
 // API (frames by long-poll with their meta, controls and epochs, state), the server's own fused objects, and the guards.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defaultConfig } from "@mrs6000/processing/config/config";
 import { toParams } from "@mrs6000/processing/fusion/pose";
 import { RIG3, ROOM } from "@mrs6000/processing/sim/rig";
 import { writeSession } from "@mrs6000/processing/sim/session";
+import { SettingsDb } from "@mrs6000/server-common/settings";
 import { SourceConnection } from "@mrs6000/server-common/sourceClient";
 import { startSource, type TestSource } from "@mrs6000/server-common/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/http";
 import { Hub } from "../src/hub";
 import { applySettings } from "../src/settings";
-import { Store } from "../src/store";
+import { DEFAULTS, Store } from "../src/store";
 
 let dir = "", source: TestSource, hub: Hub, app: ReturnType<typeof createApp>;
-const base = "http://debug.test";
+const base = "http://localhost:8010";
 
 async function waitUntil(cond: () => boolean | Promise<boolean>, timeoutS = 10): Promise<void> {
   const end = performance.now() + timeoutS * 1000;
@@ -106,6 +108,12 @@ describe("debug server", () => {
     expect(bad.status).toBe(404);
     expect(((await bad.json()) as { error: string }).error).toMatch(/nope/);
     expect((await getJson("/api/recordings")).map((r: { name: string }) => r.name)).toEqual(["walk"]);
+  });
+
+  it("the committed empty database is the defaults, and a new one starts as a copy of it", () => {
+    const template = join(dirname(fileURLToPath(import.meta.url)), "../empty.db");
+    expect(new SettingsDb(template).load()).toEqual(DEFAULTS);                 // scripts/empty-db.ts wrote it
+    expect(new Store(join(dir, "fresh.db"), template).data).toEqual(DEFAULTS);
   });
 
   it("settings: applied at once and saved; a refused one changes nothing", { timeout: 30_000 }, async () => {

@@ -5,8 +5,8 @@
 //   bun proc-servers/object-detection/src/main.ts --db data/lobby.db    another server ("lobby"; give it its own port on its page)
 //
 // Everything else is a setting, in the database and on the server's page (store.ts, settings.ts): the source server,
-// where it listens, the processing, the track cache, the clients, access. A new database data/<name>.db takes over an
-// older config/<name>.json.
+// where it listens, the processing, the track cache, the clients, access. A new database data/<name>.db starts as a
+// copy of empty.db.
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -41,7 +41,7 @@ export async function main(argv = Bun.argv.slice(2)): Promise<void> {
   try {
     args = parse(argv);
     const name = basename(args.db, ".db");
-    store = new Store(args.db, name, [resolve(HERE, "config", `${name}.json`)]);
+    store = new Store(args.db, name, resolve(HERE, "empty.db"));
   } catch (e) {
     console.error(`error: ${describeError(e)}`);
     process.exit(2);

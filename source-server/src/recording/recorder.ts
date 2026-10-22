@@ -19,7 +19,7 @@ export class Recorder {
   bytes = 0;                               // written so far
   error = "";                              // also set by the writer
   upsideDown: boolean | null = null;
-  sensor: string | null = null;            // written into the header (multi-sensor sessions)
+  extra: Record<string, unknown> = {};     // written into the header too: the sensor's name, its RecordingMeta
   private file: OpenFile | null = null;
   private t0 = 0;
   private n = 0;                           // values per scan, from the first scan
@@ -48,7 +48,7 @@ export class Recorder {
   write(scan: Scan, ts: number): void {
     if (!this.file) return;
     const { d, r } = frameValues(scan);
-    this.writeFrame({ t: ts, d, r }, () => headerOf(scan, this.upsideDown, this.sensor));
+    this.writeFrame({ t: ts, d, r }, () => headerOf(scan, this.upsideDown));
   }
 
   /** one scan as recorded (time, uint16 distances and rssi); `header` describes the layout, asked for once */
@@ -57,7 +57,7 @@ export class Recorder {
     if (this.error) { void this.close(); return; }       // the writer failed
     if (!this.n) {
       this.n = f.d.length;
-      this.queue(headerLine(header()), []);
+      this.queue(headerLine({ ...header(), ...this.extra }), []);
     } else if (f.d.length !== this.n || f.r.length !== this.n) {
       this.error = "recording stopped: scan layout changed";
       log(this.error);

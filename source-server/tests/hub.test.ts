@@ -1,11 +1,13 @@
 // The source server on a real port: live sensors (recorded, sent to consumers), replays in both modes with their
 // ownership rules, the rig, the HTTP API with its guards, and calibrating a recorded rig.
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { SettingsDb } from "@mrs6000/server-common/settings";
 import { compose, fromParams, invert, poseError } from "@mrs6000/processing/fusion/pose";
 import { RIG3, ROOM } from "@mrs6000/processing/sim/rig";
-import { writeSession } from "@mrs6000/processing/sim/session";
+import { readTpcHeader, writeSession } from "@mrs6000/processing/sim/session";
 import { defaultConfig } from "@mrs6000/processing/config/config";
 import { ValueError } from "@mrs6000/server-common/errors";
 import { SourcePipeline } from "@mrs6000/server-common/pipeline";
@@ -19,7 +21,7 @@ import { parse, sensorSpecs } from "../src/main";
 import { applySettings } from "../src/settings";
 import type { Scan } from "../src/model";
 import { mergeRig, parseSensorArg } from "../src/rig";
-import { Store } from "../src/store";
+import { DEFAULTS, Store } from "../src/store";
 import { Consumers, type Conn } from "../src/ws";
 import { endless, waitUntil, writeRecording } from "./helpers";
 
@@ -201,6 +203,14 @@ describe("HTTP API", () => {
     expect((await add({ Origin: r.base })).status).toBe(200);                 // its own page
     const ws = await fetch(r.base + "/ws", { headers: { Upgrade: "websocket", Connection: "Upgrade", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", Origin: "http://evil.example" } });
     expect(ws.status).toBe(403);
+    // a page whose domain was pointed at this machine (DNS rebinding): its Origin and Host agree, but the name is not this server's
+    const rebound = { Origin: "http://evil.example:8000", Host: "evil.example:8000" };
+    expect((await fetch(r.base + "/api/registry/sensors", { method: "POST", body: JSON.stringify({ name: "x", ip: "1.2.3.4" }), headers: { "Content-Type": "application/json", ...rebound } })).status).toBe(403);
+    expect((await fetch(r.base + "/api/settings", { headers: rebound })).status).toBe(403);
+    expect((await fetch(r.base + "/ws", { headers: { Upgrade: "websocket", Connection: "Upgrade", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", ...rebound } })).status).toBe(403);
+    r.store.data.origins = ["http://box.lan:8000"];                            // a name of its own, given in its settings
+    expect((await fetch(r.base + "/api/state", { headers: { Host: "box.lan:8000" } })).status).toBe(200);
+    r.store.data.origins = [];
     r.store.data.adminToken = "s3cret";
     expect((await r.app(new Request(r.base + "/api/registry/sensors/a", { method: "DELETE" }))).status).toBe(401);
     expect((await r.app(new Request(r.base + "/api/registry/consumers"))).status).toBe(401);
@@ -232,18 +242,17 @@ describe("HTTP API", () => {
     expect(bad.status).toBe(400);
   });
 
-  it("the sensors: the registry's, else one at the default; an older source.json or rig.json taken over once", () => {
+  it("the sensors: the registry's, else one at the default; a new database starts as a copy of empty.db", () => {
     expect(parseSensorArg("left=192.168.0.2").name).toBe("left");
     expect(sensorSpecs([{ name: "a", ip: "1.2.3.4" }, { name: "b" }, { name: "c", ip: "5.6.7.8", enabled: false }]).map(s => s.name)).toEqual(["a"]);
     expect(sensorSpecs([]).map(s => s.name)).toEqual(["sensor"]);
     expect(parse([])).toMatchObject({ offline: false });
     expect(() => parse(["--port", "8100"])).toThrow();                          // a setting, not an option
-    writeFileSync(join(dir, "rig.json"), JSON.stringify({ sensors: [{ name: "a", ip: "1.2.3.4", pose: POSE }] }));
-    const s = new Store(join(dir, "source.db"), [join(dir, "source.json"), join(dir, "rig.json")]);
-    expect(s.rig.sensors).toEqual([{ name: "a", ip: "1.2.3.4", pose: POSE }]);
-    expect(s.data.port).toBe(8000);
-    writeFileSync(join(dir, "rig.json"), JSON.stringify({ sensors: [] }));
-    expect(new Store(join(dir, "source.db"), [join(dir, "rig.json")]).rig.sensors.length).toBe(1);   // the database wins now
+    const template = join(dirname(fileURLToPath(import.meta.url)), "../empty.db");
+    expect(new SettingsDb(template).load()).toEqual(DEFAULTS);                  // the committed one is the defaults (scripts/empty-db.ts)
+    const s = new Store(join(dir, "source.db"), template);
+    s.addSensor({ name: "a", ip: "1.2.3.4" });
+    expect(new Store(join(dir, "source.db"), template).data).toMatchObject({ port: 8000, sensors: [{ name: "a", ip: "1.2.3.4" }] });   // its own from now on
   });
 
   it("settings: through the page's API, applied at once, saved; a refused change changes nothing", async () => {
@@ -253,8 +262,8 @@ describe("HTTP API", () => {
       moves.push(to); this.at = to;
     } };
     const app = createApp(hub, store, { onSettings: b => applySettings(hub, store, listener, dir, b) });
-    const put = (b: unknown, h: Record<string, string> = {}) => app(new Request("http://x/api/settings", { ...post(b, h), method: "PUT" }));
-    const got = await (await app(new Request("http://x/api/settings"))).json() as any;
+    const put = (b: unknown, h: Record<string, string> = {}) => app(new Request("http://localhost:8000/api/settings", { ...post(b, h), method: "PUT" }));
+    const got = await (await app(new Request("http://localhost:8000/api/settings"))).json() as any;
     expect(got.values).toMatchObject({ host: "127.0.0.1", port: 8000, recordings: "recordings", open: true });
     expect(got.fields.map((f: { key: string }) => f.key)).toContain("adminToken");
     const ok = await (await put({ port: 8100, recordings: "elsewhere", origins: "http://localhost:5174" })).json() as any;
@@ -266,7 +275,7 @@ describe("HTTP API", () => {
     expect((await put({ open: "no" })).status).toBe(400);
     expect(await (await put({ open: false })).json()).not.toHaveProperty("moved");
     await put({ adminToken: "s3cret" });
-    expect((await app(new Request("http://x/api/settings"))).status).toBe(401);
+    expect((await app(new Request("http://localhost:8000/api/settings"))).status).toBe(401);
     expect((await put({ open: true })).status).toBe(401);
     expect((await put({ open: true }, { Authorization: "Bearer s3cret" })).status).toBe(200);
     expect(moves).toHaveLength(1);
@@ -289,10 +298,11 @@ describe("calibration", () => {
     expect(pts.sensors.every((s: { xy: number[] }) => s.xy.length > 100)).toBe(true);
     const accepted = await call("POST", "/api/calibration", { action: "accept" });
     expect(accepted.sensors.every((e: { pose?: unknown }) => e.pose)).toBe(true);
-    const meta = JSON.parse(readFileSync(join(path, "session.json"), "utf8"));
-    const first = meta.truth[0].pose, world = invert(fromParams({ ...first, z: 0, pitch: 0, roll: 0 }));   // a's levelled frame
-    for (const e of meta.rig.sensors) {
-      const truth = compose(world, fromParams(meta.truth.find((t: { name: string }) => t.name === e.name).pose)), err = poseError(fromParams(e.pose), truth);
+    const hdrs = ["a", "b", "c"].map(n => ({ name: n, ...readTpcHeader(join(path, `${n}.tpc`)) }));   // the poses are in each file's header
+    expect(hdrs.map(h => [h.sensor, h.index])).toEqual([["a", 0], ["b", 1], ["c", 2]]);
+    const first = hdrs[0].truth!, world = invert(fromParams({ ...first, z: 0, pitch: 0, roll: 0 }));   // a's levelled frame
+    for (const e of hdrs) {
+      const truth = compose(world, fromParams(e.truth!)), err = poseError(fromParams(e.rig!.pose!), truth);
       console.log(`${e.name}: ${(err.dist * 100).toFixed(1)} cm, ${err.angle.toFixed(2)}°`);
       expect(err.dist).toBeLessThan(0.05);
       expect(err.angle).toBeLessThan(0.5);

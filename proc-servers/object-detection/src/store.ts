@@ -1,7 +1,8 @@
 // One object-detection server's settings, in its SQLite file (data/<name>.db, settings.ts of server-common),
 // edited on its page (FIELDS): its name and source server, where it listens, the processing settings, the track
 // cache, the registered clients with their tokens and options, access. Several servers with different databases run
-// side by side, each its own filter chain for its own clients. A new database takes over an older config/<name>.json.
+// side by side, each its own filter chain for its own clients. A new database starts as a copy of the committed empty
+// one (empty.db, written by scripts/empty-db.ts from the defaults, without a name: a server's name is its file's).
 import { randomBytes } from "node:crypto";
 import { defaultConfig, mergeConfig, type Config } from "@mrs6000/processing/config/config";
 import { NotFoundError, ValueError } from "@mrs6000/server-common/errors";
@@ -41,18 +42,19 @@ export const FIELDS: SettingField[] = [
   { key: "processing", label: "Processing settings", type: "json", group: "Processing", help: "Merged onto the defaults; the live processing and the replays follow at once." },
   { key: "open", label: "Unregistered clients may connect", type: "bool", group: "Access" },
   { key: "adminToken", label: "Admin token", type: "secret", group: "Access", help: "When set, every change needs it." },
-  { key: "origins", label: "Other pages allowed to make changes", type: "lines", group: "Access", help: "One origin per line." },
+  { key: "origins", label: "Other pages allowed to make changes", type: "lines", group: "Access", help: "One origin per line, e.g. http://localhost:5174. Their host names also count as names of this server: add e.g. http://box.lan:8000 when it is reached by a DNS name." },
 ];
 
 export class Store {
   data: ServerConfig;
   private db: SettingsDb;
 
-  /** `path` null: in memory only (tests); `name` for a new database; `legacy`: an older JSON file, taken over once */
-  constructor(readonly path: string | null, name = "objects", legacy: string[] = []) {
-    this.db = new SettingsDb(path);
-    this.data = loadSettings(this.db, defaults(name), legacy);
+  /** `path` null: in memory only (tests); `name` for a new database; `template`: the empty database it starts from */
+  constructor(readonly path: string | null, name = "objects", template?: string) {
+    this.db = new SettingsDb(path, template);
+    this.data = loadSettings(this.db, defaults(name));
     this.data.source = { ...defaults(name).source, ...this.data.source };
+    if (path) this.save();                   // its name, and keys added since the database was made, get stored too
   }
 
   save(): void { this.db.save(this.data as unknown as Record<string, unknown>); }

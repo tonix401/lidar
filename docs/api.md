@@ -3,7 +3,11 @@
 Three kinds of server, each with an HTTP API under `/api` and a WebSocket at `/ws` ([architecture.md](architecture.md)).
 Errors are short JSON `{"error": …}` responses with the usual status codes ([errors.md](errors.md)).
 
-**Guards on every server.** A state-changing request (POST, PUT, DELETE) or a WebSocket upgrade from a web page of
+**Guards on every server.** Every API request and WebSocket upgrade must name the server by a name it has: its Host
+must be a loopback name (`localhost`, `127.0.0.1`, `[::1]`), this machine's host name (or `<name>.local`), one of its
+network addresses, or the host of an origin in its *Other pages allowed to make changes* setting; anything else is
+refused (403). Otherwise a page whose own domain was pointed at this machine (DNS rebinding) would count as the
+server's own page. A state-changing request (POST, PUT, DELETE) or a WebSocket upgrade from a web page of
 another origin is refused (403): a browser sends any site's requests to a server on localhost. Pages of the server's
 own origin, and origins in its *Other pages allowed to make changes* setting, are allowed (the `make dev` pages are
 proxied with their own address, so they count as the server's own); requests without an Origin (curl, the other
@@ -25,7 +29,7 @@ one). The pages draw their settings form from the fields (`libs/web/src/settings
 | GET | `/api/state` | Live sensors (`name`, `ip`, `error`, `rate`, `clock`, `device`, `upside_down`), recording progress, replays (`id`, `recording`, `mode`, `owner`, `consumers`, position), the calibration's target. |
 | GET | `/api/status?sensor=<name>` | A live sensor's REST device values. |
 | GET | `/api/registry/sensors` | The configured sensors (`name`, `ip`, `enabled`, `mount`, and their pose). POST adds one; PUT/DELETE `/api/registry/sensors/<name>` change or remove one. The live sensors restart (refused while recording). |
-| GET | `/api/rig?recording=<name>` | The poses: the live rig, or a recording's (a session's `session.json`). |
+| GET | `/api/rig?recording=<name>` | The poses: the live rig, or a recording's (from its files' headers). |
 | PUT | `/api/rig?recording=<name>` `{"sensors":[{"name", "pose":{x,y,z,yaw,pitch,roll}, "time_offset_s", "calibrated", "quality"}]}` | Store poses (a single-sensor recording has no rig). Every processing server watching it gets the new rig. |
 | GET | `/api/recordings` | List (name, bytes, scans, seconds, created, the sensors of a session). |
 | GET | `/api/recordings/<name>` | Download (a session folder as `.zip`). DELETE removes it and ends its replays. |
@@ -38,7 +42,7 @@ one). The pages draw their settings form from the fields (`libs/web/src/settings
 | GET/PUT | `/api/settings` | Address, port, recordings folder (changed: from now on; refused while recording), `open` (unregistered processing servers may connect), admin token, origins. |
 
 Its database is `source-server/data/source.db` (`--db`): the sensors with their poses, the registered processing
-servers and the settings. A new one takes over an older `source.json` (or `server.json`, `rig.json`) once.
+servers and the settings. A new one starts as a copy of the committed `source-server/empty.db` (the defaults).
 
 ### The source protocol (`/ws`, version 1)
 
@@ -90,7 +94,7 @@ What the viewer calls. A *view* is the live sensors, or with `?session=<id>` a r
 | GET/PUT | `/api/config` | Its own processing settings (for `/api/objects`). |
 | GET/PUT | `/api/settings` | The source server's URL and its token there, its name, a replay every page opens first, address, port, its own objects on or off and their processing settings, admin token, origins. Another source, token, name or objects setting starts every view afresh (the pages' replays end). |
 
-Its database is `proc-servers/debug/data/debug.db` (`--db`); a new one takes over an older `config/debug.json` once.
+Its database is `proc-servers/debug/data/debug.db` (`--db`); a new one starts as a copy of the committed `empty.db`.
 
 ## Object-detection server (`proc-servers/object-detection`, :8020)
 
@@ -106,7 +110,8 @@ Its database is `proc-servers/debug/data/debug.db` (`--db`); a new one takes ove
 | GET/PUT | `/api/settings` | The source server's URL and token, its name, address, port, replays with their own processing at once (`maxSessions`), track cache folder, processing settings, `open` (unknown clients may connect), admin token, origins. Another source, token or name ends the replays and the background jobs and starts the live processing afresh. |
 
 Each server has its own database, `data/<name>.db` (`--db`; the name is the file's, until it is changed): the settings
-and the registered clients. A new one takes over an older `config/<name>.json` once.
+and the registered clients. A new one starts as a copy of the committed `empty.db` (the defaults without a name: the
+server's name is its file's).
 
 ### The objects protocol (`/ws`, version 1)
 

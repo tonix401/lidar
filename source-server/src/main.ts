@@ -5,7 +5,7 @@
 //   bun source-server/src/main.ts --db other.db         another settings database
 //
 // Everything else is a setting, in the database and on the server's page (store.ts, settings.ts): the sensors, where
-// it listens, the recordings folder, access. A new database takes over an older source.json (or server.json, rig.json).
+// it listens, the recordings folder, access. A new database starts as a copy of empty.db.
 // The sensors are the registry's (with an address, not disabled), else one sensor "sensor" at the default address.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +53,7 @@ export async function main(argv = Bun.argv.slice(2)): Promise<void> {
   let args: Args, store: Store;
   try {
     args = parse(argv);
-    store = new Store(args.db, ["source.json", "server.json", "rig.json"].map(f => resolve(REPO, f)));
+    store = new Store(args.db, resolve(HERE, "empty.db"));
   } catch (e) {
     console.error(`error: ${describeError(e)}`);
     process.exit(2);

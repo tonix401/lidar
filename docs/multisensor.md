@@ -9,7 +9,7 @@ was measured and what is still open is [at the end](#measured-2026-10-20).
 ## Setup
 
 - **Addresses:** every sensor needs its own IP. New units all ship with the same one; set it with SOPAS or the
-  web UI for now (`mrs6000 set-ip` is not written yet, see [open](#not-done-yet)).
+  web UI for now (a set-ip tool is not written yet, see [open](#not-done-yet)).
 - **Placement:** fixed, looking into the shared area from different sides, **within 10° of level** and each
   **seeing some floor** (the lowest layer looks down 13°, so about 4 m out at 1 m height). Overlap between
   sensors is what calibration and fusion use: the more of the floor and walls two sensors share, the better.
@@ -18,8 +18,8 @@ was measured and what is still open is [at the end](#measured-2026-10-20).
   gitignored). Names: letters, digits, `_` and `-`. With none added, it connects one sensor at the default address.
 - **Without sensors:** `make sim-session` writes a simulated 3-sensor session to `recordings/sim_rig3/`
   (45 s: 3 s empty, then one person walking a loop). With `make run ARGS="--offline"`, calibrate it on the source
-  server's page (**Calibration**, target "recording sim_rig3") and replay it in the viewer. Its `session.json` holds
-  the true poses under `truth`, to compare with.
+  server's page (**Calibration**, target "recording sim_rig3") and replay it in the viewer. Each file's header holds
+  its sensor's true pose under `truth`, to compare with.
 
 ## Time: one clock for all sensors
 
@@ -56,7 +56,7 @@ fast as the sensor workers go):
    sensor tracked them at least 100 times).
 3. **Solve** (about a second, in its own thread) and check: the page shows every sensor's empty scene from above
    in the solved poses, where walls seen by several sensors should lie on top of each other. **Use these poses**
-   stores them (the live sensors' in the source server's database, a recording's in its `session.json`), or **Discard**. Every
+   stores them (the live sensors' in the source server's database, a recording's in its files' headers), or **Discard**. Every
    processing server watching gets the new rig at once, and the viewer reloads it.
 
 The world frame is the first sensor's levelled frame: z up, origin on the floor below it, x its forward
@@ -229,7 +229,7 @@ view uploads only the parts it draws, and of those only the used range.
 ## Not done yet
 
 - **Drift watch:** re-checking the static residual every ~30 s to flag a sensor that was bumped.
-- **`mrs6000 set-ip`:** writing a sensor's address (left out until it can be tried on a device; a wrong
+- **Setting a sensor's address** from here (a Bun tool or the source server's page): (left out until it can be tried on a device; a wrong
   network write can make a unit unreachable).
 - **On the real sensors:** cross-talk between sensors facing each other (outliers and ghosts with the other one
   on vs. off), the walk calibration, the doubled-wall thickness and the fused person's height against the real

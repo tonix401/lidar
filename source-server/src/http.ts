@@ -63,7 +63,7 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
       const rec = q("recording");
       return json(rec === null ? hub.rig("live") : hub.recordingRig(rec));
     }
-    if (p === "/api/rig" && m === "PUT") { admin(req); return json(hub.setRig(await body(req), q("recording"))); }
+    if (p === "/api/rig" && m === "PUT") { admin(req); return json(await hub.setRig(await body(req), q("recording"))); }
 
     if (p === "/api/recordings" && m === "GET") return json(listRecordings(hub.recDir));
     if (p.startsWith("/api/recordings/")) {
@@ -97,7 +97,7 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
         return json(hub.startCalibration((b.recording as string | undefined) ?? null,
                                          { walkSeconds: opt.walkSeconds, minSamples: opt.minSamples, emptySeconds: opt.emptySeconds }).state());
       }
-      if (action === "accept") return json(hub.acceptCalibration());
+      if (action === "accept") return json(await hub.acceptCalibration());
       hub.stopCalibration();
       return json({ phase: "idle" });
     }

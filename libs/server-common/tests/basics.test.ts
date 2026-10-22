@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import { ConnectionError, describeError, ValueError } from "../src/errors";
 import { Health, Stop, supervised } from "../src/health";
+import { Forbidden, fromAllowedOrigin, guard, knownHost } from "../src/http";
+import { hostname } from "node:os";
 
 describe("errors", () => {
   const sys = (code: string, extra = {}) => Object.assign(new Error(`${code}: something`), { code, ...extra });
@@ -52,5 +54,22 @@ describe("health", () => {
     }, stop, 0.01, l => lines.push(l));
     expect(calls).toBe(3);
     expect(lines).toContain("worker: crashed (boom), restarting");
+  });
+});
+
+describe("guards", () => {
+  const req = (url: string, h: Record<string, string> = {}, method = "GET") => new Request(url, { method, headers: h });
+  it("a request must name the server by one of its names", () => {
+    for (const ok of ["http://localhost:8000/api", "http://127.0.0.1:8000/api", "http://[::1]:8000/api", `http://${hostname()}:8000/api`, "http://x.localhost/api"])
+      expect(knownHost(req(ok))).toBe(true);
+    expect(knownHost(req("http://evil.example:8000/api"))).toBe(false);
+    expect(knownHost(req("http://box.lan:8000/api"), ["http://box.lan:8000"])).toBe(true);
+  });
+  it("same origin counts only under a name of its own (DNS rebinding)", () => {
+    expect(fromAllowedOrigin(req("http://127.0.0.1:8000/api", { Origin: "http://127.0.0.1:8000" }))).toBe(true);
+    expect(fromAllowedOrigin(req("http://evil.example:8000/api", { Origin: "http://evil.example:8000" }))).toBe(false);
+    expect(() => guard(req("http://evil.example:8000/api"))).toThrow(Forbidden);                       // reading too
+    expect(() => guard(req("http://localhost:8000/api", { Origin: "http://evil.example" }, "POST"))).toThrow(Forbidden);
+    expect(() => guard(req("http://localhost:8000/api", { Origin: "http://localhost:8000" }, "POST"))).not.toThrow();
   });
 });

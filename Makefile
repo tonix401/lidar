@@ -1,16 +1,13 @@
-# Common tasks on Linux. Needs Bun ≥ 1.4 and make (and Python ≥ 3.14 with venv for the old backend/, until it is removed).
+# Common tasks on Linux. Needs Bun ≥ 1.4 and make.
 # See README → Setup for installing those per OS.
-PYTHON  ?= python3
-PY      := backend/.venv/bin/python
 ARGS    ?=
 NAME    ?= default
 OBJECTS := proc-servers/object-detection
-# the object-detection servers: one per settings database data/<name>.db (and per older config/<name>.json, which
-# its new database takes over); "default" when there is none yet
-OBJ_NAMES = $(sort $(basename $(notdir $(wildcard $(OBJECTS)/data/*.db) $(filter-out %/example.json,$(wildcard $(OBJECTS)/config/*.json)))))
+# the object-detection servers: one per settings database data/<name>.db; "default" when there is none yet
+OBJ_NAMES = $(sort $(basename $(notdir $(wildcard $(OBJECTS)/data/*.db))))
 
 .PHONY: help check install browser build run run-source run-debug run-objects dev test test-layers test-libs test-source test-procs \
-        test-clients test-e2e test-backend sim-session tracks profile profile-node clean
+        test-clients test-e2e sim-session tracks profile profile-node empty-dbs clean
 
 help:
 	@echo "make install        the Bun workspace (libs, servers, clients)"
@@ -27,6 +24,7 @@ help:
 	@echo "make tracks         a recording's fused tracks, the same to the byte every run (ARGS='sim_rig3 out.jsonl')"
 	@echo "make profile        ms per scan of every pipeline step, three simulated sensors, in Bun (ARGS='beams scans')"
 	@echo "make profile-node   the same in Node (for comparing the runtimes on a device)"
+	@echo "make empty-dbs      write each server's committed empty.db anew from its defaults (after changing them)"
 	@echo "make clean          remove build output and test artifacts"
 
 check:
@@ -73,7 +71,7 @@ dev: install
 	(cd clients/object-detection && OBJECTS_DB=$(CURDIR)/$(OBJECTS)/data/$(NAME).db bun --bun x vite) & \
 	cd clients/debug && bun --bun run dev
 
-test: test-layers test-libs test-source test-procs test-clients test-e2e $(if $(wildcard backend),test-backend)
+test: test-layers test-libs test-source test-procs test-clients test-e2e
 
 test-layers: install
 	bun test ./tests/layers.test.ts
@@ -93,19 +91,6 @@ test-clients: install
 test-e2e: build
 	cd clients/debug && bun --bun run test:e2e
 
-# the old Python backend (backend/), until it is removed
-backend/.venv/.installed: backend/pyproject.toml
-	@$(PYTHON) -c "import sys; sys.exit(sys.version_info < (3, 14))" 2>/dev/null || \
-	  { echo "error: need Python >= 3.14 as '$(PYTHON)' (or run: make PYTHON=/path/to/python3.14 ...)"; exit 1; }
-	rm -rf backend/.venv
-	$(PYTHON) -m venv backend/.venv
-	$(PY) -m pip install -q --upgrade pip
-	$(PY) -m pip install -q -e "backend[dev,preview]"
-	@touch $@
-
-test-backend: backend/.venv/.installed
-	$(PY) -m pytest backend
-
 sim-session: install
 	bun libs/processing/scripts/simulate-session.ts $(ARGS)
 
@@ -119,5 +104,8 @@ profile-node: install
 	cd clients/debug && bun build scripts/profile-pipeline.ts --target=node --outfile=node_modules/.cache/profile-pipeline.mjs \
 	  && node node_modules/.cache/profile-pipeline.mjs $(ARGS)
 
+empty-dbs: install
+	for d in source-server proc-servers/debug proc-servers/object-detection; do bun $$d/scripts/empty-db.ts || exit 1; done
+
 clean:
-	rm -rf source-server/web/dist clients/debug/dist clients/object-detection/dist clients/debug/e2e/artifacts backend/.pytest_cache
+	rm -rf source-server/web/dist clients/debug/dist clients/object-detection/dist clients/debug/e2e/artifacts

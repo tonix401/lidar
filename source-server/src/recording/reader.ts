@@ -1,10 +1,12 @@
 // Reading recordings (format: format.ts): random access to a .tpc or .tpc.zstd file, which may still grow while
-// it is being recorded.
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+// it is being recorded; and rewriting a recording's header (its metadata) in place.
+import { closeSync, openSync, readSync, renameSync, statSync } from "node:fs";
+import { open } from "node:fs/promises";
 import { basename } from "node:path";
 import { describeError, ValueError } from "@mrs6000/server-common/errors";
 import { newScan, type Scan } from "../model";
-import { DIST_UNIT_MM, INDEX_SIZE, INDEX_TAG, SKIP_MAGIC, ZSTD_MAGIC, type Frame, type Header } from "./format";
+import { DIST_UNIT_MM, headerLine, INDEX_SIZE, INDEX_TAG, SKIP_MAGIC, splitHeader, ZSTD_MAGIC, zstdEntry, type Frame, type Header,
+         type RecordingMeta } from "./format";
 
 /** what replay publishes for a frame: sensor, time, the /api/frame payload, valid points, its header */
 export interface PublishedFrame { sensor: string; t: number; data: Uint8Array; points: number; hdr: Header }
@@ -15,7 +17,9 @@ export class Recording {
   readonly path: string;
   readonly compressed: boolean;
   readonly header: Uint8Array;                       // the header line as stored
-  readonly hdr: Header;
+  readonly hdr: Header;                              // its scan layout (and sensor name)
+  meta: RecordingMeta;                               // the rest: place in a session, created, rig, truth
+  readonly dataStart: number;                        // where the scans (or the first chunk's entry) begin
   readonly L: number; readonly B: number; readonly n: number;
   readonly frameSize: number;
   private fd: number;
@@ -30,15 +34,15 @@ export class Recording {
     this.fd = openSync(path, "r");
     try {
       const magic = new DataView(this.read(0, 4).buffer).getUint32(0, true);
-      if (magic === ZSTD_MAGIC) throw new ValueError("plain zstd without the scan index: zstd -d it, or use mrs6000 compress");
+      if (magic === ZSTD_MAGIC) throw new ValueError("plain zstd without the scan index: zstd -d it to a .tpc, which replays as it is");
       this.compressed = magic === SKIP_MAGIC;
       if (this.compressed) {
         const e = this.entry(0, statSync(this.path).size);
         if (!e || e.scans !== 0) throw new ValueError("no header");
         this.header = Bun.zstdDecompressSync(this.read(e.off, e.zlen));
-        this.indexed = e.off + e.zlen;
-      } else this.header = this.headerLine();
-      this.hdr = JSON.parse(new TextDecoder().decode(this.header)) as Header;
+        this.indexed = this.dataStart = e.off + e.zlen;
+      } else { this.header = this.headerLine(); this.dataStart = this.header.length; }
+      ({ hdr: this.hdr, meta: this.meta } = splitHeader(JSON.parse(new TextDecoder().decode(this.header))));
       this.L = Number(this.hdr.layers); this.B = Number(this.hdr.beams);
       if (!Number.isInteger(this.L) || !Number.isInteger(this.B) || !Array.isArray(this.hdr.elev)) throw new ValueError("bad header");
       if (this.hdr.elev.length !== this.L * this.B) throw new ValueError("header elevation table has the wrong size");
@@ -182,3 +186,18 @@ export class Recording {
 }
 
 export const round2 = (x: number): number => Math.round(x * 100) / 100;
+
+/** store another header (layout and metadata) in the recording at `rec.path`: the file is written anew through a
+ *  temporary file (the scans are copied as they are), so readers that have it open keep reading the old one */
+export async function rewriteHeader(rec: Recording, hdr: Header, meta: RecordingMeta): Promise<void> {
+  const line = headerLine({ ...hdr, ...meta }), tmp = rec.path + ".tmp";
+  const src = await open(rec.path, "r"), dst = await open(tmp, "w");
+  try {
+    await dst.write(rec.compressed ? zstdEntry(line) : line);
+    const buf = new Uint8Array(1 << 20);
+    for (let pos = rec.dataStart, n; (n = (await src.read(buf, 0, buf.length, pos)).bytesRead) > 0; pos += n) await dst.write(buf.subarray(0, n));
+  } finally {
+    await src.close(); await dst.close();
+  }
+  renameSync(tmp, rec.path);
+}

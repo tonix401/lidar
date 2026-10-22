@@ -1,6 +1,7 @@
 // The debug server's settings, in its SQLite file (data/debug.db, settings.ts of server-common), edited in the
 // viewer's Server section (FIELDS): its name and source server, where it listens, its own fused objects and their
-// processing, a replay every page opens first, access. A new database takes over an older config/debug.json.
+// processing, a replay every page opens first, access. A new database starts as a copy of the committed empty one
+// (empty.db, written from DEFAULTS by scripts/empty-db.ts).
 import { defaultConfig, mergeConfig, type Config } from "@mrs6000/processing/config/config";
 import { loadSettings, SettingsDb } from "@mrs6000/server-common/settings";
 import type { SettingField } from "@mrs6000/wire/settings";
@@ -29,18 +30,19 @@ export const FIELDS: SettingField[] = [
   { key: "objects", label: "The server's own fused objects", type: "bool", group: "Processing", help: "Next to the page's own, for comparison (GET /api/objects)." },
   { key: "processing", label: "Their processing settings", type: "json", group: "Processing", help: "Merged onto the defaults." },
   { key: "adminToken", label: "Admin token", type: "secret", group: "Access", help: "When set, changing these settings needs it." },
-  { key: "origins", label: "Other pages allowed to make changes", type: "lines", group: "Access", help: "One origin per line." },
+  { key: "origins", label: "Other pages allowed to make changes", type: "lines", group: "Access", help: "One origin per line, e.g. http://localhost:5174. Their host names also count as names of this server: add e.g. http://box.lan:8000 when it is reached by a DNS name." },
 ];
 
 export class Store {
   data: DebugConfig;
   private db: SettingsDb;
 
-  /** `path` null: in memory only (tests); `legacy`: an older JSON file, taken over once */
-  constructor(readonly path: string | null, legacy: string[] = []) {
-    this.db = new SettingsDb(path);
-    this.data = loadSettings(this.db, DEFAULTS, legacy);
+  /** `path` null: in memory only (tests); `template`: the empty database a new one starts from */
+  constructor(readonly path: string | null, template?: string) {
+    this.db = new SettingsDb(path, template);
+    this.data = loadSettings(this.db, DEFAULTS);
     this.data.source = { ...DEFAULTS.source, ...this.data.source };
+    if (path) this.save();                   // keys added since the database was made get stored too
   }
 
   save(): void { this.db.save(this.data as unknown as Record<string, unknown>); }

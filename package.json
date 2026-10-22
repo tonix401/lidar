@@ -6,7 +6,6 @@
     "libs/*",
     "source-server",
     "proc-servers/*",
-    "clients/*",
-    "server"
+    "clients/*"
   ]
 }

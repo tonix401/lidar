@@ -1,8 +1,13 @@
 // What every server's HTTP API shares: JSON replies, request bodies, the error → status mapping, the built web page
-// at /, and the guard against other web sites: a browser sends any page's requests to a server on localhost, so a
-// state-changing request (or a WebSocket upgrade) carrying an Origin that is not the server's own, or one listed
-// with --allow-origin, is refused. Requests without an Origin (curl, the other servers) are not browsers'.
+// at /, and the guards against other web sites:
+//  - a request must name the server by a name it has (Host: loopback, this machine's name or addresses, or the host
+//    of an origin in its settings). A page whose own domain was pointed at this machine (DNS rebinding) sends its
+//    domain as the Host, and would otherwise count as the server's own page;
+//  - a browser sends any page's requests to a server on localhost, so a state-changing request (or a WebSocket
+//    upgrade) carrying an Origin that is not the server's own, or one in its settings, is refused. Requests without
+//    an Origin (curl, the other servers) are not browsers'.
 import { existsSync, statSync } from "node:fs";
+import { hostname, networkInterfaces } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { describeError, NotFoundError, ValueError } from "./errors";
 import { log } from "./log";
@@ -33,15 +38,38 @@ export function oneOf<T extends string>(v: unknown, allowed: readonly T[], what:
 
 const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
 
-/** is this request from the server's own page, an allowed origin, or not from a browser at all? */
+const LOOPBACK = ["localhost", "127.0.0.1", "[::1]"];
+let machine: { names: Set<string>; at: number } = { names: new Set(), at: -Infinity };
+
+/** this machine's names: loopback, its host name (and .local), its interfaces' addresses (asked again every 10 s) */
+function machineNames(): Set<string> {
+  if (performance.now() - machine.at < 10_000) return machine.names;
+  const names = new Set(LOOPBACK), host = hostname().toLowerCase();
+  if (host) { names.add(host); names.add(`${host}.local`); }
+  for (const list of Object.values(networkInterfaces()))
+    for (const a of list ?? []) names.add(a.family === "IPv6" ? `[${a.address.split("%")[0].toLowerCase()}]` : a.address);
+  machine = { names, at: performance.now() };
+  return names;
+}
+
+/** does the request name this server by one of its names (Host), or by the host of an allowed origin? */
+export function knownHost(req: Request, allowed: readonly string[] = []): boolean {
+  const host = new URL(req.url).hostname.toLowerCase();
+  if (machineNames().has(host) || host.endsWith(".localhost")) return true;
+  return allowed.some(o => { try { return new URL(o).hostname.toLowerCase() === host; } catch { return false; } });
+}
+
+/** is this request for one of the server's names, and from its own page, an allowed origin, or not from a browser? */
 export function fromAllowedOrigin(req: Request, allowed: readonly string[] = []): boolean {
+  if (!knownHost(req, allowed)) return false;
   const origin = req.headers.get("origin");
   if (origin === null) return true;
   return origin === new URL(req.url).origin || allowed.includes(origin);
 }
 
-/** refuse a state-changing request from another web site */
+/** refuse a request for a name that is not the server's, and a state-changing one from another web site */
 export function guard(req: Request, allowed: readonly string[] = []): void {
+  if (!knownHost(req, allowed)) throw new Forbidden(`${new URL(req.url).host} is not a name of this server (add it to its allowed origins)`);
   if (!SAFE.has(req.method) && !fromAllowedOrigin(req, allowed)) throw new Forbidden(`requests from ${req.headers.get("origin")} are not allowed`);
 }
 

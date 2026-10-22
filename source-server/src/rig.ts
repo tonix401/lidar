@@ -1,7 +1,7 @@
 // The rig: which sensors there are and where they are (rig types: libs/wire/src/rig.ts). The live rig lives in the
-// registry (store.ts), a recording's in its session.json; calibration (calibration.ts) and PUT /api/rig change them.
+// registry (store.ts), a recording's in its files' headers (recording/session.ts); calibration (calibration.ts) and PUT /api/rig change them.
 import { ValueError } from "@mrs6000/server-common/errors";
-import { checkName } from "@mrs6000/server-common/json";
+import { checkName } from "@mrs6000/server-common/names";
 import { POSE_KEYS, type Pose, type Rig, type RigSensor } from "@mrs6000/wire/rig";
 
 export { rigFor, type Rig, type RigSensor } from "@mrs6000/wire/rig";

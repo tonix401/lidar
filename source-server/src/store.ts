@@ -1,10 +1,11 @@
 // The source server's settings, in its SQLite file (data/source.db, settings.ts of server-common), edited on its
 // page: the sensors (registry: name, address, enabled, mount, and the live rig's poses), the processing servers that
 // may connect with their tokens, and the server's own settings (FIELDS: where it listens, the recordings folder,
-// access). On the first start, an older source.json (or server.json, rig.json) is taken over.
+// access). A new database starts as a copy of the committed empty one (empty.db, written from DEFAULTS by
+// scripts/empty-db.ts).
 import { randomBytes } from "node:crypto";
 import { NotFoundError, ValueError } from "@mrs6000/server-common/errors";
-import { checkName } from "@mrs6000/server-common/json";
+import { checkName } from "@mrs6000/server-common/names";
 import type { MountSetting } from "@mrs6000/server-common/sensor/core";
 import { loadSettings, SettingsDb } from "@mrs6000/server-common/settings";
 import type { Rig, RigSensor } from "@mrs6000/wire/rig";
@@ -31,7 +32,7 @@ export const FIELDS: SettingField[] = [
   { key: "recordings", label: "Recordings folder", type: "text", group: "Recordings", help: "Relative to the repository, or absolute. Not while recording." },
   { key: "open", label: "Unregistered processing servers may connect", type: "bool", group: "Access" },
   { key: "adminToken", label: "Admin token", type: "secret", group: "Access", help: "When set, every change needs it (the field at the top of the page)." },
-  { key: "origins", label: "Other pages allowed to make changes", type: "lines", group: "Access", help: "One origin per line, e.g. http://localhost:5174." },
+  { key: "origins", label: "Other pages allowed to make changes", type: "lines", group: "Access", help: "One origin per line, e.g. http://localhost:5174. Their host names also count as names of this server: add e.g. http://box.lan:8000 when it is reached by a DNS name." },
 ];
 
 const MOUNTS: readonly MountSetting[] = ["auto", "upright", "upsidedown"];
@@ -40,11 +41,12 @@ export class Store {
   data: SourceConfig;
   private db: SettingsDb;
 
-  /** `path` null: in memory only (tests); `legacy`: older JSON files, the first that exists is taken over once */
-  constructor(readonly path: string | null, legacy: string[] = []) {
-    this.db = new SettingsDb(path);
-    this.data = loadSettings(this.db, DEFAULTS, legacy);
+  /** `path` null: in memory only (tests); `template`: the empty database a new one starts from */
+  constructor(readonly path: string | null, template?: string) {
+    this.db = new SettingsDb(path, template);
+    this.data = loadSettings(this.db, DEFAULTS);
     this.data.sensors = this.data.sensors.map(sensorEntry);
+    if (path) this.save();                   // keys added since the database was made get stored too
   }
 
   save(): void { this.db.save(this.data as unknown as Record<string, unknown>); }

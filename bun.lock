@@ -109,18 +109,6 @@
         "vitest": "^5.0.4",
       },
     },
-    "server": {
-      "name": "@mrs6000/server",
-      "version": "0.3.0",
-      "dependencies": {
-        "@mrs6000/processing": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "^1.4.3",
-        "typescript": "^7.0.2",
-        "vitest": "^5.0.4",
-      },
-    },
     "source-server": {
       "name": "@mrs6000/source-server",
       "version": "0.1.0",
@@ -156,8 +144,6 @@
     "@mrs6000/proc-objects": ["@mrs6000/proc-objects@workspace:proc-servers/object-detection"],
 
     "@mrs6000/processing": ["@mrs6000/processing@workspace:libs/processing"],
-
-    "@mrs6000/server": ["@mrs6000/server@workspace:server"],
 
     "@mrs6000/server-common": ["@mrs6000/server-common@workspace:libs/server-common"],
 

@@ -3,18 +3,20 @@
 // when the server is closed; a recording's tracks computed in the background serve later replays from the cache.
 import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defaultConfig } from "@mrs6000/processing/config/config";
 import { toParams } from "@mrs6000/processing/fusion/pose";
 import { RIG3, ROOM } from "@mrs6000/processing/sim/rig";
 import { writeSession } from "@mrs6000/processing/sim/session";
+import { SettingsDb } from "@mrs6000/server-common/settings";
 import { startSource, type TestSource } from "@mrs6000/server-common/testing";
 import type { WorldObject } from "@mrs6000/wire/objects";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/http";
 import { Hub } from "../src/hub";
 import { applySettings, cacheRoot, sourceAddress } from "../src/settings";
-import { Store } from "../src/store";
+import { defaults, Store } from "../src/store";
 import { Clients, type Conn } from "../src/ws";
 
 const T0 = 1.7e9;
@@ -150,6 +152,13 @@ describe("object-detection clients", () => {
     c.ws.close();
   });
 
+  it("the committed empty database is the defaults without a name; a new server is named after its file", () => {
+    const template = join(dirname(fileURLToPath(import.meta.url)), "../empty.db"), { name: _, ...unnamed } = defaults("");
+    expect(new SettingsDb(template).load()).toEqual(unnamed);                  // scripts/empty-db.ts wrote it
+    expect(new Store(join(dir, "hall.db"), "hall", template).data).toEqual(defaults("hall"));
+    expect(new Store(join(dir, "hall.db"), "other").data.name).toBe("hall");   // stored with it
+  });
+
   it("settings: applied at once and saved; a refused one changes nothing", async () => {
     const db = join(dir, "lobby.db"), st = new Store(db, "lobby"), moves: unknown[] = [];
     st.data.source.url = source.url;
@@ -157,9 +166,9 @@ describe("object-detection clients", () => {
     h.start();
     const listener = { at: { host: "127.0.0.1", port: 8020 }, move(to: { host: string; port: number }) { moves.push(to); this.at = to; } };
     const a = createApp(h, st, null, null, b => applySettings(h, st, listener, dir, b));
-    const put = (b: unknown) => a(new Request("http://objects.test/api/settings", { method: "PUT", body: JSON.stringify(b), headers: { "Content-Type": "application/json" } }));
+    const put = (b: unknown) => a(new Request("http://localhost:8020/api/settings", { method: "PUT", body: JSON.stringify(b), headers: { "Content-Type": "application/json" } }));
     try {
-      expect((await (await a(new Request("http://objects.test/api/settings"))).json() as any).values).toMatchObject({ name: "lobby", port: 8020, maxSessions: 2 });
+      expect((await (await a(new Request("http://localhost:8020/api/settings"))).json() as any).values).toMatchObject({ name: "lobby", port: 8020, maxSessions: 2 });
       expect((await put({ maxSessions: 4, port: 8021, cache: "elsewhere" })).status).toBe(200);
       expect([h.maxProcessing, h.cacheRoot, moves]).toEqual([4, join(dir, "elsewhere", "lobby"), [{ host: "127.0.0.1", port: 8021 }]]);
       const live = h.live;

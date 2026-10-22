@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 const ROOT = resolve(import.meta.dir, "..");
 const PROJECTS = ["source-server", "proc-servers/debug", "proc-servers/object-detection", "clients/debug", "clients/object-detection"];
 const LIBS: Record<string, string[]> = { processing: [], wire: [], "server-common": ["processing", "wire"], web: ["wire"] };
-const SKIP = new Set(["node_modules", "dist", "artifacts", "cache", "config"]);
+const SKIP = new Set(["node_modules", "dist", "artifacts", "cache", "data"]);
 
 function* tsFiles(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {

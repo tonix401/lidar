@@ -1,18 +1,17 @@
 // What the source server holds: the live sensors (always running, recorded on request, sent to every consumer that
 // subscribed), the replays consumers asked for, the rig (the live sensors' poses in the registry, a recording's in its
-// session.json) and a calibration. Consumers (ws.ts) and the HTTP API (http.ts) only call these methods.
+// files' headers) and a calibration. Consumers (ws.ts) and the HTTP API (http.ts) only call these methods.
 import { rmSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import type { CalibratorOptions } from "@mrs6000/processing/fusion/calib/calibrator";
 import { NotFoundError, ValueError } from "@mrs6000/server-common/errors";
-import { saveJson } from "@mrs6000/server-common/json";
 import { log } from "@mrs6000/server-common/log";
 import type { MountSetting, SensorFrame } from "@mrs6000/server-common/sensor/core";
 import type { ReplayMode, SensorStatus } from "@mrs6000/wire/source";
 import { Calibration } from "./calibration";
 import { LiveSensor } from "./live";
 import type { RecorderState } from "./recording/recorder";
-import { openRecording, Session, SessionRecorder, SESSION_FILE } from "./recording/session";
+import { openRecording, Session, SessionRecorder, storeSessionRig } from "./recording/session";
 import { recordingPath } from "./recording/catalog";
 import { Replay, type ReplayEvents, type ReplayInfo } from "./replay";
 import { mergeRig, rigFor, type Rig } from "./rig";
@@ -101,7 +100,8 @@ export class Hub {
 
   /** a replay for the consumer `owner` (its name) */
   createReplay(name: string, mode: ReplayMode, events: ReplayEvents, owner = ""): Replay {
-    const r = new Replay(recordingPath(this.recDir, name), mode, events, owner);
+    const path = recordingPath(this.recDir, name);
+    const r = new Replay(path, mode, events, owner, () => this.recording(path));
     this.replays.set(r.id, r);
     log(`replay ${r.id}: ${r.name} (${mode}${owner ? `, for ${owner}` : ""})`);
     return r;
@@ -123,6 +123,9 @@ export class Hub {
 
   stopRecording(): Promise<void> { return this.recorder.stop(); }
 
+  /** is the file or session folder at `path` being recorded right now? */
+  recording(path: string): boolean { return this.recorder.active && !!this.recorder.path && resolve(this.recorder.path) === resolve(path); }
+
   /** delete a recording (file or session folder): refused while it is being recorded; its replays end first */
   deleteRecording(name: string): void {
     const path = recordingPath(this.recDir, name), rs = this.recorder.state();
@@ -141,13 +144,13 @@ export class Hub {
   /** a recording's rig (by name; a single file has none) */
   recordingRig(name: string): Rig {
     const rec = openRecording(recordingPath(this.recDir, name));
-    try { return rigFor(rec instanceof Session ? (rec.meta.rig ?? { sensors: [] }) : { sensors: [] }, [...rec.sensors]); } finally { rec.close(); }
+    try { return rigFor(rec instanceof Session ? rec.rig : { sensors: [] }, [...rec.sensors]); } finally { rec.close(); }
   }
 
   rigVersionOf(source: string): number { return source === "live" ? this.rigVersion : this.replay(source).rigVersion; }
 
-  /** store poses: the live rig, or a recording's (a session folder's session.json) */
-  setRig(update: unknown, recording: string | null = null): Rig {
+  /** store poses: the live rig, or a recording's (in its files' headers; not while it is being recorded) */
+  async setRig(update: unknown, recording: string | null = null): Promise<Rig> {
     if (recording === null) {
       const names = new Set(this.store.data.sensors.map(s => s.name)), items = (update as { sensors?: unknown })?.sensors;
       if (Array.isArray(items) && items.some(u => !u || typeof u !== "object" || !names.has((u as { name?: string }).name ?? "")))
@@ -157,16 +160,14 @@ export class Hub {
       return rigFor(this.store.rig, this.store.data.sensors.map(s => s.name));
     }
     const path = recordingPath(this.recDir, recording);
+    if (this.recording(path)) throw new ValueError("stop the recording first");
     const session = (() => { try { return new Session(path); } catch { throw new ValueError("a single-sensor recording has no rig to store"); } })();
-    try {
-      session.meta.rig = mergeRig(session.meta.rig ?? { sensors: [] }, update);
-      saveJson(join(session.path, SESSION_FILE), session.meta);
-      for (const r of this.replays.values())
-        if (resolve(r.path) === resolve(path) && r.rec instanceof Session) { r.rec.meta.rig = session.meta.rig; this.rigChanged(r.id); }
-      return rigFor(session.meta.rig, session.sensors);
-    } finally {
-      session.close();
-    }
+    let rig: Rig;
+    try { rig = mergeRig(session.rig, update); } finally { session.close(); }
+    await storeSessionRig(path, rig);
+    for (const r of this.replays.values())
+      if (resolve(r.path) === resolve(path) && r.rec instanceof Session) { r.rec.rig = rig; this.rigChanged(r.id); }
+    return rigFor(rig, session.sensors);
   }
 
   private rigChanged(source: string): void {
@@ -185,14 +186,18 @@ export class Hub {
     this.stopCalibration();
     let names: string[], path: string | null = null;
     if (recording === null) names = this.liveNames();
-    else { path = recordingPath(this.recDir, recording); const rec = openRecording(path); names = [...rec.sensors]; rec.close(); }
+    else {
+      path = recordingPath(this.recDir, recording);
+      if (this.recording(path)) throw new ValueError("stop the recording first");
+      const rec = openRecording(path); names = [...rec.sensors]; rec.close();
+    }
     if (names.length < 2) throw new ValueError("calibration needs at least two sensors");
     this.calibration = new Calibration(recording === null ? "live" : basename(path!), names, this.mounts(names), o, path);
     return this.calibration;
   }
 
   /** store the calibration's poses as the rig (of the live sensors or of the recording) */
-  acceptCalibration(): Rig {
+  acceptCalibration(): Promise<Rig> {
     const c = this.calibration;
     if (!c?.result) throw new ValueError("no calibration result to accept");
     const target = c.target === "live" ? null : c.target, sensors = c.entries();

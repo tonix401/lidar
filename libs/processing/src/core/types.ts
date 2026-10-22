@@ -1,4 +1,4 @@
-// Shapes of the backend API (see backend/src/mrs6000/server/app.py)
+// Shapes of the debug server's API (proc-servers/debug/src/http.ts) as the viewer sees them
 
 export type Source = "live" | "replay";
 
@@ -67,7 +67,7 @@ export interface SensorInfo {
   clock?: { offset_s: number; drift_ppm: number; samples: number; resets: number };
 }
 
-/** the rig (backend/src/mrs6000/rig.py): poses in m and degrees */
+/** the rig (libs/wire/src/rig.ts): poses in m and degrees */
 export interface RigPose { x: number; y: number; z: number; yaw: number; pitch: number; roll: number }
 export interface RigSensor {
   name: string; ip?: string; pose?: RigPose; time_offset_s?: number; calibrated?: string;

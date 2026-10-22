@@ -1,12 +1,11 @@
 # Setup
 
 You need **[Bun](https://bun.sh) 1.4+** (package manager and runtime of everything; no Node needed), **make** and
-**git**. Chrome or Chromium is only needed for the browser test. The old Python package (`backend/`, until it is
-removed) needs **Python ≥ 3.14** with `venv`; `make test` runs its tests only while it is there.
+**git**. Chrome or Chromium is only needed for the browser test.
 
 | Distribution | Install the prerequisites |
 |---|---|
-| Arch / Manjaro / EndeavourOS | `sudo pacman -S bun make git` (optional: `chromium`, `python`) |
+| Arch / Manjaro / EndeavourOS | `sudo pacman -S bun make git` (optional: `chromium`) |
 | Debian / Ubuntu / Mint | `sudo apt install make git unzip`, then Bun with `curl -fsSL https://bun.sh/install | bash` |
 | Fedora | `sudo dnf install make git unzip`, then Bun with `curl -fsSL https://bun.sh/install | bash` |
 | NixOS | `nix-shell` in the repo (see `shell.nix`) |
@@ -44,9 +43,10 @@ and, for the source server, `--offline` (no sensor connection: tests, demos).
 | debug | `proc-servers/debug/data/debug.db` | the viewer's Server section | the source server's URL and its token there, its name, a replay every page opens first, address and port, its own objects and their processing settings, admin token, origins |
 | object detection | `proc-servers/object-detection/data/<name>.db` | its page's Server section | the source server's URL and token, its name, address and port, processing settings, track cache folder, replays at once, registered clients, `open`, admin token, origins |
 
-- **The first start** creates the database with the defaults: 127.0.0.1 and port 8000, 8010 or 8020. A new database
-  takes over an older JSON file once (`source.json`, `proc-servers/debug/config/debug.json`,
-  `proc-servers/object-detection/config/<name>.json`).
+- **The first start** copies the server's committed empty database (`source-server/empty.db`,
+  `proc-servers/debug/empty.db`, `proc-servers/object-detection/empty.db`: the defaults, 127.0.0.1 and port 8000, 8010
+  or 8020) to its `data/` folder. After changing the defaults in code, `make empty-dbs` writes them anew (a test checks
+  that they agree).
 - **Another address or port** rebinds the server at once: the new one is bound first (a taken port is refused and
   nothing changes), and the page moves there. Whoever uses the server then needs the new address: the processing
   servers their *Source server* setting, the clients theirs. A server that now listens on 127.0.0.1 only can no longer
@@ -66,6 +66,7 @@ and, for the source server, `--offline` (no sensor connection: tests, demos).
 | Browser test finds no Chromium | It looks for `$CHROMIUM`, then `chromium` / `google-chrome` on PATH. Install one, set `CHROMIUM=/path/to/browser`, or run `make browser` |
 | Playwright's Chromium won't start (bare system) | `cd clients/debug && sudo bunx playwright-core install-deps chromium` |
 | A request from another page is refused (403) | Add its origin (e.g. `http://localhost:5180`) to the server's *Other pages allowed to make changes* setting. The `make dev` pages need nothing: their proxy keeps the page's address |
+| "… is not a name of this server" (403) | The server is reached by a name it does not know as its own (e.g. a DNS name, or a Docker service name). Add an origin with that name, e.g. `http://box.lan:8000`, to its *Other pages allowed to make changes* (from `localhost` on that machine), or use its address |
 | The settings say "this needs the admin token" | Enter the server's admin token in the page's admin token field |
 
 **Recordings** are not in git (too big): share `.tpc.zstd` files separately (download them on the source server's
@@ -78,7 +79,4 @@ bun source-server/src/main.ts                                       # settings i
 bun source-server/src/main.ts --db /srv/lidar/source.db --offline   # another database; no sensor connection
 bun proc-servers/debug/src/main.ts                                  # settings in proc-servers/debug/data/debug.db
 bun proc-servers/object-detection/src/main.ts --db proc-servers/object-detection/data/lobby.db   # the server "lobby"
-backend/.venv/bin/mrs6000 info | status | dump | get <Var>         # the old Python CLI, while backend/ exists
-backend/.venv/bin/mrs6000 echo-filter [first|all|last] [--save] [--env .env]
-backend/.venv/bin/mrs6000 compress | decompress <files>            # x.tpc ↔ x.tpc.zstd
 ```

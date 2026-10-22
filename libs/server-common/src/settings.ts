@@ -1,21 +1,21 @@
 // A server's settings in one SQLite file (bun:sqlite): one row per top-level key, its value as JSON. A server loads
 // them once, edits them through its page (GET/PUT /api/settings, the fields it describes) and saves every change.
-// A JSON file of an older version is taken over once, while the database is still empty.
+// A new database starts as a copy of the server's committed empty one (its `template`, <project>/empty.db).
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { SettingField, SettingsView } from "@mrs6000/wire/settings";
 import { ValueError } from "./errors";
-import { loadJson } from "./json";
 
 const SCHEMA = 1;
 
 export class SettingsDb {
   private db: Database;
 
-  /** `path` null: in memory only (tests) */
-  constructor(readonly path: string | null) {
+  /** `path` null: in memory only (tests); `template`: copied to `path` when there is no database there yet */
+  constructor(readonly path: string | null, template?: string) {
     if (path) mkdirSync(dirname(path), { recursive: true });
+    if (path && template && !existsSync(path) && existsSync(template)) copyFileSync(template, path);
     this.db = new Database(path ?? ":memory:", { create: true, strict: true });
     this.db.run("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
     this.db.run(`PRAGMA user_version = ${SCHEMA}`);
@@ -41,16 +41,18 @@ export class SettingsDb {
   close(): void { this.db.close(); }
 }
 
-/** a server's settings: its defaults, then the database's rows (or, for a new database, the first older JSON file
- *  that exists, which is then saved); keys the defaults do not have are dropped */
-export function loadSettings<T extends object>(db: SettingsDb, defaults: T, legacy: string[] = []): T {
-  const known = (d: Record<string, unknown>) =>
-    Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, d[k] ?? structuredClone(v)])) as T;
-  if (!db.empty) return known(db.load());
-  const old = legacy.map(p => loadJson(p)).find(Boolean) ?? {};
-  const d = known(old);
-  db.save(d as Record<string, unknown>);
-  return d;
+/** a server's settings: the database's rows over its defaults (a key the database lacks, e.g. one added since, gets
+ *  its default; keys the defaults do not have are dropped) */
+export function loadSettings<T extends object>(db: SettingsDb, defaults: T): T {
+  const rows = db.load();
+  return Object.fromEntries(Object.entries(defaults).map(([k, v]) => [k, rows[k] ?? structuredClone(v)])) as T;
+}
+
+/** write a server's empty database (its defaults) anew: what scripts/empty-db.ts of each server commits */
+export function writeEmpty(path: string, values: Record<string, unknown>): void {
+  const db = new SettingsDb(path);
+  db.save(values);
+  db.close();
 }
 
 /** for tests and tools: a database with these settings, before its server starts */

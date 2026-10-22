@@ -95,7 +95,7 @@ export function calibrateRig(inputs: CalibInput[], o: CalibOptions = {}): Sensor
   return res;
 }
 
-/** the rig.json form of a result (backend/src/mrs6000/rig.py) */
+/** a result as a rig entry (libs/wire/src/rig.ts), as the source server stores it */
 export function rigEntry(c: SensorCalibration, when = new Date()): Record<string, unknown> {
   const p = toParams(c.pose), round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
   return {

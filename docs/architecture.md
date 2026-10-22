@@ -27,7 +27,9 @@ sensors ──CoLa──▶ source-server ──/ws (source protocol)──▶ p
 - **Libraries** (`libs/`) are what the projects share. Projects import only libraries and their own files, never each
   other; libraries never import a project. `tests/layers.test.ts` (`make test-layers`) enforces it.
 - **One Bun workspace** (`package.json` with every project and library, `bun.lock` at the root): one `bun install`.
-- The old Python package (`backend/`: sensor library, CLI, the first viewer server) stays until it is removed.
+- The old Python package (`backend/`: sensor library, command-line tool, the first viewer server) was removed on
+  2026-10-22. Its command-line tools are not ported: the echo filter, reading device variables by name, converting
+  `.tpc` ↔ `.tpc.zstd`, and CSV / PLY export.
 
 The protocols are in [api.md](api.md): the source protocol between the source and the processing servers (one
 WebSocket per source watched, binary frames), and each server's HTTP API and client protocol.
@@ -47,7 +49,8 @@ WebSocket per source watched, binary frames), and each server's HTTP API and cli
 | `libs/web/` | `@mrs6000/web` | what the pages share: the settings form (drawn from the fields a server describes) | |
 
 **Settings.** Each server keeps its settings in its own SQLite database (`<project>/data/`, gitignored; `--db` names
-another) and edits them on its page through `GET`/`PUT /api/settings`: the server describes its fields
+another; a new one starts as a copy of the committed `<project>/empty.db`) and edits them on its page through
+`GET`/`PUT /api/settings`: the server describes its fields
 (`libs/wire/src/settings.ts`), the page draws them (`libs/web`), and a change applies at once (another address or port
 rebinds, another source reconnects). The only command-line options are `--db` and the source's `--offline`.
 
@@ -66,17 +69,18 @@ source-server/
     ws.ts                 the processing servers' connections (the source protocol)
     http.ts store.ts settings.ts rig.ts zip.ts   the HTTP API, the settings database (sensors, consumers, the rest)
                           and changing it live, rig merging, session downloads
-  data/                   source.db, its settings (gitignored)
+  data/                   source.db, its settings (gitignored); empty.db: the committed empty one a new one starts from
+  scripts/                empty-db.ts (writes empty.db from the defaults), migrate-sessions.ts (session.json → headers)
   web/                    the page: sensors, recordings, calibration (with the result from above), the active sources and who watches
                           them, the registered processing servers, the settings
   tests/                  vitest with a fake CoLa sensor (TCP) and a fake REST sensor (HTTP), real-scan fixtures
 proc-servers/debug/
   src/ main.ts hub.ts view.ts feed.ts http.ts store.ts settings.ts   a View per watched source (frames → Feeds for the long-poll)
-  data/debug.db           its settings (gitignored)
+  data/debug.db           its settings (gitignored), a copy of the committed empty.db at first
 proc-servers/object-detection/
   src/ main.ts hub.ts replay.ts batch.ts trackCache.ts ws.ts http.ts store.ts settings.ts
   scripts/tracks.ts       a recording's tracks, the same to the byte on every run (make tracks)
-  data/<name>.db          one settings database per server (gitignored); an older config/<name>.json is taken over once
+  data/<name>.db          one settings database per server (gitignored), a copy of empty.db at first
 clients/debug/            the viewer (see docs/viewer.md): src/app.ts, sensorView.ts, worker/, render/, api/, ui/; e2e/
 clients/object-detection/ src/main.ts (connection, panel), map.ts (the floor map), model.ts (the messages, tested)
 libs/processing/          src/core config pipeline objects fusion; sim/; tests/ (golden checksums, layer rules); scripts/

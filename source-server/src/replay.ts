@@ -47,17 +47,19 @@ export class Replay {
   private published = new Map<string, number>();
   private stateAt = 0;                       // stream mode: when the position was last sent
 
-  constructor(readonly path: string, readonly mode: ReplayMode, private events: ReplayEvents = {}, readonly owner = "") {
-    this.rec = openRecording(path);
-    if (mode === "stream") this.player.load(openRecording(path));   // the player owns its own reader (it closes it on unload)
+  /** `growing`: whether the source server is still recording it (a session then shows what every sensor reached) */
+  constructor(readonly path: string, readonly mode: ReplayMode, private events: ReplayEvents = {}, readonly owner = "",
+              growing: () => boolean = () => false) {
+    this.rec = openRecording(path, growing);
+    if (mode === "stream") this.player.load(openRecording(path, growing));   // the player owns its own reader (it closes it on unload)
     setTimeout(() => void this.loop(), 0);    // after the constructor: the first frame's callback may use the replay
   }
 
   get name(): string { return basename(this.path); }
   get sensors(): string[] { return [...this.rec.sensors]; }
 
-  /** the rig the recording was made with (a session's; a single file has none) */
-  get rig(): Rig { return rigFor(this.rec instanceof Session ? (this.rec.meta.rig ?? { sensors: [] }) : { sensors: [] }, this.sensors); }
+  /** the rig the recording was made or calibrated with (a session's; a single file has none) */
+  get rig(): Rig { return rigFor(this.rec instanceof Session ? this.rec.rig : { sensors: [] }, this.sensors); }
 
   /** stream mode: the transport */
   control(action: string, value: unknown = null): void {

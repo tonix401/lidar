@@ -1,15 +1,8 @@
 .env
 recordings
-__pycache__/
-*.egg-info/
-.venv/
-.pytest_cache/
 node_modules/
 dist/
 clients/debug/e2e/artifacts/
-# the servers' own state, set up per machine: their settings databases (data/), and the older files a new database
-# takes over
+# the servers' own state, set up per machine: their settings databases (a new one starts as a copy of the committed
+# empty.db next to data/)
 source-server/data/
-source.json
-server.json
-rig.json

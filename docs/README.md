@@ -1,7 +1,7 @@
 # Documentation
 
 Tools for SICK MRS6224R LiDARs: a source server (the sensors, recordings, calibration), processing servers (debug,
-object detection) and their clients (the viewer, a reference objects page), plus the old Python package (`backend/`).
+object detection) and their clients (the viewer, a reference objects page).
 
 | Document | What's in it |
 |---|---|
