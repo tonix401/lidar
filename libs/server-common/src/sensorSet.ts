@@ -106,14 +106,25 @@ export class SensorSet {
       if (this.shared[m]) { for (const [j, r] of this.runners.entries()) if (j !== m) r.setOther(m, null); this.shared[m] = false; }
       return;
     }
-    const L = hdr.layers, B = hdr.beams, zs = hdr.upside_down ? -1 : 1;
-    const layerSin = Float32Array.from({ length: L }, (_, l) => zs * Math.sin(hdr.elev[l * B + (B >> 1)] * Math.PI / 180));
+    const L = hdr.layers, B = hdr.beams, layerSin = this.layerSin(hdr);
     this.runners.forEach((r, j) => {
       if (j === m || !this.calibrated[j]) return;
       const T = compose(invert(this.poses[m]), this.poses[j]);       // j's frame → m's
       r.setOther(m, { R: T.R, t: T.t, L, B, az0: hdr.start_azimuth_deg, step: hdr.step_deg, layerSin, range: o.raw, age: 0, scanT: o.t });
     });
     this.shared[m] = true;
+  }
+
+  /** the sine of each layer's elevation (its middle beam), z flipped upside down: per header, not per scan */
+  private sinCache = new WeakMap<Header, Float32Array>();
+  private layerSin(hdr: Header): Float32Array {
+    let s = this.sinCache.get(hdr);
+    if (!s) {
+      const L = hdr.layers, B = hdr.beams, zs = hdr.upside_down ? -1 : 1;
+      s = Float32Array.from({ length: L }, (_, l) => zs * Math.sin(hdr.elev[l * B + (B >> 1)] * Math.PI / 180));
+      this.sinCache.set(hdr, s);
+    }
+    return s;
   }
 
   private fuse(ks: number[]): void {

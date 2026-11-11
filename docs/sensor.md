@@ -36,7 +36,12 @@ The dimensions come from the MRS6000 operating instructions, figure 20 (Maßzeic
   - `POST` writes need challenge-response: `getChallenge`, then SHA256 over `user:realm:pw`, `POST:name` and the nonce (see `RestClient.login`).
   - The full variable list is in the SOPASair web UI's `current_msdd` zip (`descriptor.json`).
 - **WebSocket** `ws://ip/scan`: MessagePack preview at only about 2 Hz, with big-endian uint16 × 12.5 mm distances. Too slow; not used by the viewer.
-- **CoLa A, TCP 2111**: the full-rate source.
+- **CoLa B, TCP 2112**: the full-rate source the source server streams from (`source-server/src/cola.ts`, `parseLmdScandataB`).
+  - Framing: `02 02 02 02`, uint32 payload length (big endian), payload, XOR of the payload bytes. Commands are their text with binary arguments: `sEN LMDscandata ` + byte `01`.
+  - The telegram has the same fields in the same order as CoLa A, as fixed-width big-endian integers: version, device number (uint16), serial (uint32), status (2 × uint8), telegram and scan counter (uint16), time since start-up and time of transmission (uint32, µs), input and output status (2 × uint8 each), layer angle (int16, 1/200°), scan and measurement frequency (uint32); encoders (uint16 count, uint32 + uint16 each); 16-bit channels (uint16 count; each: 5-character name, float32 scale and offset, int32 start angle, uint16 step, uint16 count, the values).
+  - About 133 kB per scan against 258 kB in CoLa A, and parsed in about half the time (`0.37` against `0.74` ms per scan on one core at 3.4 GHz).
+  - Checked on the device (2026-11-03): 29 scans streamed over CoLa B gave exactly the frames (all 22152 distances and rssi values, and the elevation table) that CoLa A gave for the same scans.
+- **CoLa A, TCP 2111**: the same telegrams as ASCII hex tokens. The configuration commands (`ColaClient` login, read, write, save) use it, as their arguments are text; `colaScans(…, "A")` still streams from it.
   - `sEN LMDscandata 1` streams one telegram per **layer**.
   - Channels: DIST1, RSSI1, VANGL (elevation; scale −0.00025, offset 1.5).
   - Layer angle is int16 in 1/200°.

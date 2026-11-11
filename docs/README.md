@@ -7,7 +7,7 @@ object detection) and their clients (the viewer, a reference objects page).
 |---|---|
 | [setup.md](setup.md) | Prerequisites per distribution, `make` targets, common fixes, running without `make` |
 | [architecture.md](architecture.md) | The projects (source server, processing servers, clients) and libraries, what each does, where each part lives |
-| [sensor.md](sensor.md) | The MRS6224R: scan geometry, mounting, housing dimensions and the 3D model, REST / WebSocket / CoLa A interfaces and their quirks |
+| [sensor.md](sensor.md) | The MRS6224R: scan geometry, mounting, housing dimensions and the 3D model, REST / WebSocket / CoLa B and CoLa A interfaces and their quirks |
 | [pipeline.md](pipeline.md) | The viewer's processing stages, auto and manual mode, presets, metrics and measurements |
 | [viewer.md](viewer.md) | The page: the three views, draw modes, the panel and its controls, keys, theme, and how the panel is built |
 | [objects.md](objects.md) | Object detection, tracking, classification and highlighting (work in progress) |

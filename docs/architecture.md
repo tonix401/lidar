@@ -11,7 +11,7 @@ sensors ──CoLa──▶ source-server ──/ws (source protocol)──▶ p
                   rig + calibration, its own page
 ```
 
-- **The source server is the only one that talks to the sensors.** It connects every sensor (CoLa A for the scans,
+- **The source server is the only one that talks to the sensors.** It connects every sensor (CoLa B for the scans,
   REST for its status), maps each sensor's clock onto the host's, records on request, keeps the recordings and serves
   them for download, and replays them for the processing servers. It owns the **rig** (where the sensors are) and
   **calibrates** it, on its own small page.

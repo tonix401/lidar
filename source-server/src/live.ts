@@ -5,11 +5,13 @@ import type { SensorFrame } from "@mrs6000/server-common/sensor/core";
 import type { ClockState, SensorStatus } from "@mrs6000/wire/source";
 import type { Header } from "@mrs6000/wire/frame";
 import type { Scan } from "./model";
+import type { ColaDialect } from "./cola";
 import { liveLoop } from "./live/loop";
 import type { FromLive, ToLive } from "./live/worker";
 
-/** where a live sensor's scans come from: its CoLa address, or (tests) a scan generator */
-export type LiveInput = { kind: "cola"; ip: string; port?: number; layers?: number } | { kind: "scans"; source: () => AsyncIterable<Scan> };
+/** where a live sensor's scans come from: its CoLa address (CoLa B on 2112 unless `protocol` says A), or (tests) a
+ *  scan generator */
+export type LiveInput = { kind: "cola"; ip: string; port?: number; layers?: number; protocol?: ColaDialect } | { kind: "scans"; source: () => AsyncIterable<Scan> };
 
 export class LiveSensor {
   label = "sensor";                          // prefix of its error messages
@@ -52,7 +54,7 @@ export class LiveSensor {
     };
     w.onerror = e => { this.error = `${this.label}: worker: ${e.message}`; };
     const i = this.input;
-    w.postMessage({ type: "init", name: this.name, label: this.label, ip: i.ip, port: i.port, layers: i.layers, retryS: this.retryS } satisfies ToLive);
+    w.postMessage({ type: "init", name: this.name, label: this.label, ip: i.ip, port: i.port, layers: i.layers, protocol: i.protocol, retryS: this.retryS } satisfies ToLive);
     w.postMessage({ type: "upsideDown", value: this.upsideDown } satisfies ToLive);
     this.worker = w;
   }

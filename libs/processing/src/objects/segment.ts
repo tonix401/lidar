@@ -71,7 +71,7 @@ export function segment(geo: SegGeometry, cur: Float32Array, fg: Uint8Array, c: 
           const bb = b + db;
           if (bb < 0 || bb >= B) continue;
           const q = ll * B + bb;
-          visit(q, Math.hypot(Math.abs(elev[q] - elev[p]) * DEG, db * psiH));
+          if (fg[q] && lab[q] < 0) visit(q, Math.hypot(Math.abs(elev[q] - elev[p]) * DEG, db * psiH));   // the angle only for candidates
         }
       }
     }

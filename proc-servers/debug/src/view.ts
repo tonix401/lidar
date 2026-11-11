@@ -79,11 +79,13 @@ export class View {
     if (f.epoch !== this.sourceEpoch) { if (this.sourceEpoch >= 0) this.epoch = ++epochs; this.sourceEpoch = f.epoch; }
     let elev = this.elev.get(f.hdr);
     if (!elev) { if (this.elev.size > 16) this.elev.clear(); this.elev.set(f.hdr, (elev = Float32Array.from(f.hdr.elev))); }
-    const { data, points } = encodeFrame(f, f.hdr, elev), h = f.hdr;
-    this.feed(f.sensor).publish(data, {
-      ...scanMeta(points, h.layers, h.beams, h.start_azimuth_deg, h.step_deg, f.rate, f.t),
+    const h = f.hdr, el = elev, extra = {
       source: this.live ? "live" : "replay", upside_down: h.upside_down ?? null, epoch: this.epoch, sensor: f.sensor, scan: f.seq,
       ...(this.live ? {} : { session: this.id, replay: this.replay }),
+    };
+    this.feed(f.sensor).publishLazy(() => {                  // built only if a page asks for it
+      const { data, points } = encodeFrame(f, h, el);
+      return { data, meta: { ...scanMeta(points, h.layers, h.beams, h.start_azimuth_deg, h.step_deg, f.rate, f.t), ...extra } };
     });
   }
 }

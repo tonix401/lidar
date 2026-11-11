@@ -28,9 +28,10 @@ export function frameMessage(meta: Record<string, unknown>, d: Uint16Array, r: U
   return out;
 }
 
-/** the other way round; the arrays are copies (they may be handed to a worker) */
+/** the other way round. The arrays are views into `b` (no copy: a WebSocket message's buffer is its own, and
+ *  postMessage copies them anyway), or copies when `b` sits at an odd offset. */
 export function readFrameMessage(b: Uint8Array): { meta: Record<string, unknown>; d: Uint16Array; r: Uint16Array } {
   const n = new DataView(b.buffer, b.byteOffset).getUint32(0, true), meta = JSON.parse(new TextDecoder().decode(b.subarray(4, 4 + n)));
-  const rest = b.slice(4 + n), half = rest.length / 4;
-  return { meta, d: new Uint16Array(rest.buffer, 0, half), r: new Uint16Array(rest.buffer, 2 * half, half) };
+  const rest = b.byteOffset % 2 === 0 ? b.subarray(4 + n) : b.slice(4 + n), half = rest.length / 4;
+  return { meta, d: new Uint16Array(rest.buffer, rest.byteOffset, half), r: new Uint16Array(rest.buffer, rest.byteOffset + 2 * half, half) };
 }

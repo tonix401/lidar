@@ -20,7 +20,7 @@ export interface Layer {
 export interface Scan {
   layers: Layer[];
   scanFrequencyHz: number | null;
-  rawTelegrams: string[];                    // CoLa A source only, one per layer
+  rawTelegrams: string[];                    // CoLa sources only, one per layer (as received, latin1)
 }
 
 export const newScan = (scanFrequencyHz: number | null = null): Scan => ({ layers: [], scanFrequencyHz, rawTelegrams: [] });

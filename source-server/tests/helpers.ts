@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { colaPasswordHash, parseLmdScandata } from "../src/cola";
+import { colaBFrame, colaPasswordHash, parseLmdScandata, type ColaDialect } from "../src/cola";
 import { newScan, type Scan } from "../src/model";
 import { frameValues, frameBytes, streamHeader } from "../src/recording/format";
 
@@ -21,6 +21,34 @@ export function realScan(): Scan {
   const scan = newScan(10);
   for (const t of realTelegrams()) scan.layers.push(parseLmdScandata(t.split(" ").slice(2)).layer);
   return scan;
+}
+
+/** one scan (24 LMDscandata telegrams) recorded over CoLa B from an MRS6224R on 2026-11-03, framed as received */
+export function realColaBStream(): Uint8Array {
+  return Bun.gunzipSync(readFileSync(join(FIXTURES, "scan_20261103.colab.bin.gz")));
+}
+
+/** an ASCII LMDscandata telegram as CoLa B payload: the same fields, as fixed-width big-endian integers (the
+ *  header's widths, the encoder block, the 16-bit channels with 5-character names; what follows them is left out) */
+export function toColaB(ascii: string): Uint8Array {
+  const t = ascii.split(" "), v = t.slice(2), out: number[] = [...Buffer.from(`${t[0]} ${t[1]} `, "latin1")];
+  const put = (w: number, x: number) => { for (let k = w - 1; k >= 0; k--) out.push(Math.floor(x / 2 ** (8 * k)) & 0xff); };
+  const hex = (tok: string) => parseInt(tok, 16);
+  [2, 2, 4, 1, 1, 2, 2, 4, 4, 1, 1, 1, 1, 2, 4, 4].forEach((w, k) => put(w, hex(v[k])));
+  let i = 16;
+  const nEnc = hex(v[i++]);
+  put(2, nEnc);
+  for (let e = 0; e < nEnc; e++) { put(4, hex(v[i++])); put(2, hex(v[i++])); }
+  const nChan = hex(v[i++]);
+  put(2, nChan);
+  for (let c = 0; c < nChan; c++) {
+    out.push(...Buffer.from(v[i++].padEnd(5).slice(0, 5), "latin1"));
+    put(4, hex(v[i++])); put(4, hex(v[i++])); put(4, hex(v[i++])); put(2, hex(v[i++]));
+    const n = hex(v[i++]);
+    put(2, n);
+    for (let k = 0; k < n; k++) put(2, hex(v[i++]));
+  }
+  return Uint8Array.from(out);
 }
 
 /** a small synthetic scan with exactly representable distances (multiples of 12.5 mm) */
@@ -52,20 +80,25 @@ export function buildTelegram(layerAngleDeg: number, distRaw: number[], o: { rss
   return [...head, ...body].join(" ");
 }
 
-/** answers the CoLa commands the client uses and streams the given telegrams in a loop once LMDscandata is enabled */
+/** answers the CoLa commands the client uses and streams the given telegrams in a loop once LMDscandata is enabled;
+ *  in CoLa B (`dialect`), framed in binary with the telegrams converted by toColaB, and a command's trailing binary
+ *  argument byte recorded as its number ("sEN LMDscandata 1") */
 export class FakeCola {
   commands: string[] = [];
   loggedIn = false;
   port = 0;
   private server: Server;
   private socks = new Set<Socket>();
+  private payloads: Uint8Array[];
 
-  constructor(readonly telegrams: string[], readonly password = "secret", public echoFilter = 2, readonly maxScans: number | null = null) {
+  constructor(readonly telegrams: string[], readonly password = "secret", public echoFilter = 2, readonly maxScans: number | null = null,
+              readonly dialect: ColaDialect = "A") {
     this.server = createServer(sock => this.handle(sock));
+    this.payloads = dialect === "B" ? telegrams.map(toColaB) : telegrams.map(t => Buffer.from(t, "latin1"));
   }
 
-  static async start(telegrams: string[], o: { password?: string; echoFilter?: number; maxScans?: number | null } = {}): Promise<FakeCola> {
-    const s = new FakeCola(telegrams, o.password, o.echoFilter, o.maxScans ?? null);
+  static async start(telegrams: string[], o: { password?: string; echoFilter?: number; maxScans?: number | null; dialect?: ColaDialect } = {}): Promise<FakeCola> {
+    const s = new FakeCola(telegrams, o.password, o.echoFilter, o.maxScans ?? null, o.dialect);
     await new Promise<void>(r => s.server.listen(0, "127.0.0.1", () => r()));
     s.port = (s.server.address() as { port: number }).port;
     return s;
@@ -73,27 +106,42 @@ export class FakeCola {
 
   private handle(sock: Socket): void {
     this.socks.add(sock);
-    let buf = "", streaming = false, sent = 0, alive = true;
-    const send = (msg: string) => { if (alive) sock.write(Buffer.from("\x02" + msg + "\x03", "latin1")); };
+    const B = this.dialect === "B";
+    let buf = Buffer.alloc(0), streaming = false, sent = 0, alive = true;
+    const send = (msg: Uint8Array) => {
+      if (alive) sock.write(B ? colaBFrame(msg) : Buffer.concat([Buffer.from([2]), msg, Buffer.from([3])]));
+    };
     const pump = () => {                       // one scan per tick while streaming
       if (!alive || !streaming) return;
-      for (const t of this.telegrams) send(t);
+      for (const t of this.payloads) send(t);
       sent++;
       if (this.maxScans !== null && sent >= this.maxScans) { sock.destroy(); return; }   // drop the connection (sensor gone)
       setTimeout(pump, 5);
     };
+    const command = (cmd: string) => {
+      this.commands.push(cmd);
+      const reply = this.reply(cmd);
+      if (reply !== null) send(B && cmd.startsWith("sEN ") ? Buffer.from([...Buffer.from(reply.replace(/\d+$/, ""), "latin1"), Number(reply.split(" ")[2])])
+                                                         : Buffer.from(reply, "latin1"));
+      if (cmd === "sEN LMDscandata 1" && !streaming) { streaming = true; setTimeout(pump, 0); }
+      else if (cmd === "sEN LMDscandata 0") streaming = false;
+    };
     sock.on("close", () => { alive = false; this.socks.delete(sock); });
     sock.on("error", () => { alive = false; });
-    sock.on("data", chunk => {
-      buf += chunk.toString("latin1");
-      for (let end; (end = buf.indexOf("\x03")) >= 0; ) {
-        const cmd = buf.slice(buf.indexOf("\x02") + 1, end);
-        buf = buf.slice(end + 1);
-        this.commands.push(cmd);
-        const reply = this.reply(cmd);
-        if (reply) send(reply);
-        if (cmd === "sEN LMDscandata 1" && !streaming) { streaming = true; setTimeout(pump, 0); }
-        else if (cmd === "sEN LMDscandata 0") streaming = false;
+    sock.on("data", (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (!B) {
+        for (let end; (end = buf.indexOf(3)) >= 0; ) {
+          command(buf.toString("latin1", buf.indexOf(2) + 1, end));
+          buf = buf.subarray(end + 1);
+        }
+        return;
+      }
+      while (buf.length >= 8 && buf.length >= 9 + buf.readUInt32BE(4)) {
+        const p = buf.subarray(8, 8 + buf.readUInt32BE(4));
+        buf = buf.subarray(9 + p.length);
+        const last = p[p.length - 1];           // a binary argument byte → its number
+        command(last < 0x20 ? p.toString("latin1", 0, p.length - 1) + String(last) : p.toString("latin1"));
       }
     });
   }
