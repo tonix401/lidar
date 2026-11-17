@@ -4,7 +4,8 @@
 //          lowest layer when it is mounted upside down), beams as columns (left = +60°, as seen from
 //          behind the sensor; the device reports azimuth in world left/right either way). Cells are as
 //          tall as the layers are apart in angle (≈ 4.6 beam steps on the MRS6000), so shapes keep their
-//          proportions: a cell is `cell` wide and `rowH()` tall
+//          proportions: a cell is `cell` wide and `rowH()` tall. With several sensors the images are stacked,
+//          one panel per sensor, all sharing the zoom and pan
 // Both draw the same processed data and colours as the 3D view, plus object overlays.
 import { css, packABGR, scale, turbo } from "@mrs6000/processing/core/colors";
 import { DEG } from "@mrs6000/processing/core/math";
@@ -15,8 +16,11 @@ import type { Geometry } from "./geometry";
 import { drawParts, squareStep, type DrawMode, type GridStyle, type OverlayOptions } from "./scene3d";
 
 export type View2DMode = "top" | "image";
+const PANEL_GAP = 48;                 // px between stacked range images: axis ticks below one, the title of the next
 
 export interface View2DData {
+  sensor: number;                     // index of the sensor it belongs to
+  name: string;
   grid: Grid;
   geo: Geometry;
   meta: FrameMeta;
@@ -34,8 +38,9 @@ export interface View2DData {
 
 export interface View2DCallbacks {
   data(): View2DData | null;
-  describe(i: number): string;        // tooltip text for beam i
-  objectAt(i: number): number;        // confirmed track id at beam i, 0 = none
+  images(): View2DData[];             // every sensor's, for the stacked range images (empty: just data())
+  describe(i: number, sensor: number): string;   // tooltip text for beam i of that sensor
+  objectAt(i: number, sensor: number): number;   // confirmed track id at beam i, 0 = none
   select(id: number): void;           // 0 = deselect
   panelWidth(): number;
   bottomInset(): number;              // px covered at the bottom (replay bar)
@@ -89,11 +94,26 @@ export class View2D {
       this.top.scale = Math.min((W - 40) / (2 * r * Math.sin(60 * DEG)), (H - 70) / r);
       this.top.cx = pw + W / 2; this.top.cy = H - 35;
     } else if (d) {
-      const A = this.imgArea();
+      const A = this.imgArea(), ps = this.panels(d), B = Math.max(...ps.map(p => p.grid.B));
       this.img.aspect = this.aspectOf(d);
-      this.img.cell = Math.max(1, Math.floor(Math.min(A.w / d.grid.B, A.h / (d.grid.L * this.img.aspect)) * this.dpr)) / this.dpr;
-      this.img.ox = A.left + (A.w - d.grid.B * this.img.cell) / 2; this.img.oy = A.top;
+      const rows = ps.reduce((n, p) => n + p.grid.L, 0) * this.img.aspect, h = A.h - (ps.length - 1) * PANEL_GAP;
+      this.img.cell = Math.max(1, Math.floor(Math.min(A.w / B, h / rows) * this.dpr)) / this.dpr;
+      this.img.ox = A.left + (A.w - B * this.img.cell) / 2; this.img.oy = A.top;
     }
+  }
+
+  /** the range images on show: one per sensor of a rig, else the single sensor's */
+  private panels(d: View2DData): View2DData[] {
+    const all = this.cb.images();
+    return all.length ? all : [d];
+  }
+
+  /** top edge (CSS px) of each panel's grid */
+  private panelTops(ps: View2DData[]): number[] {
+    const tops: number[] = [];
+    let y = this.img.oy;
+    for (const p of ps) { tops.push(y); y += p.grid.L * this.rowH() + PANEL_GAP; }
+    return tops;
   }
 
   private imgArea() {
@@ -118,7 +138,11 @@ export class View2D {
         this.top.cx = pw + (innerWidth - pw) / 2 + d.follow.y * this.top.scale; this.top.cy = innerHeight / 2 + d.follow.x * this.top.scale;
       }
       this.renderTop(d);
-    } else this.renderImage(d);
+    } else {
+      if (!this.img.cell) this.fit();
+      const ps = this.panels(d), tops = this.panelTops(ps);
+      ps.forEach((p, k) => this.renderImage(p, tops[k], k === ps.length - 1, ps.length > 1));
+    }
   }
 
   /** the map's square grid: lines of constant x (forward) and y (left) in the sensor's frame, over what is on
@@ -245,7 +269,7 @@ export class View2D {
   /** range-image row of layer l (0 = top) */
   private row(l: number, L: number, upsideDown: boolean): number { return upsideDown ? l : L - 1 - l; }
 
-  private renderImage(d: View2DData): void {
+  private renderImage(d: View2DData, oy: number, last: boolean, stacked: boolean): void {
     const ctx = this.ctx, { L, B, N, elev, rawIn } = d.grid, vis = d.geo.vis, C = d.geo.col, D = d.grid.out, up = d.upsideDown;
     if (this.off.width !== B || this.off.height !== L) { this.off.width = B; this.off.height = L; }
     const img = this.offCtx.createImageData(B, L), px = new Uint32Array(img.data.buffer);
@@ -263,8 +287,8 @@ export class View2D {
     }
     this.offCtx.putImageData(img, 0, 0);
     const A = this.imgArea();
-    if (!this.img.cell) this.fit();
-    const { cell, ox, oy } = this.img, rh = this.rowH(), gw = B * cell, gh = L * rh;
+    const { cell, ox } = this.img, rh = this.rowH(), gw = B * cell, gh = L * rh;
+    if (oy > A.top + A.h || oy + gh < A.top) return;       // panned out of view
     ctx.save();
     ctx.beginPath(); ctx.rect(A.left, A.top, A.w, A.h); ctx.clip();
     ctx.imageSmoothingEnabled = false;
@@ -301,7 +325,7 @@ export class View2D {
       if (x < A.left || x > A.left + A.w) continue;
       ctx.fillRect(x, axisY, 1, 4); ctx.fillText(`${+a.toFixed(1)}°`, x, axisY + 16);
     }
-    ctx.fillText("azimuth (left = sensor's left)", A.left + A.w / 2, axisY + 32);
+    if (last) ctx.fillText("azimuth (left = sensor's left)", A.left + A.w / 2, axisY + 32);
     ctx.textAlign = "right";
     const every = Math.max(1, Math.ceil(14 / rh));
     for (let l = 0; l < L; l += every) {
@@ -310,14 +334,14 @@ export class View2D {
       ctx.fillText(`${((up ? -1 : 1) * elev[l * B + (B >> 1)]).toFixed(1)}°`, A.left - 6, y + 4);   // world elevation
     }
     ctx.textAlign = "left";
-    ctx.fillText(`cell ${(cell * this.dpr).toFixed(0)} × ${(rh * this.dpr).toFixed(0)} px (angle-true)` +
-      (d.byDistance ? `  ·  colour: distance ${lo.toFixed(1)}–${hi.toFixed(1)} m (pick a colour mode to change)` : ""), A.left, A.top - 12);
+    ctx.fillText((stacked ? `${d.name}  ·  ` : "") + `cell ${(cell * this.dpr).toFixed(0)} × ${(rh * this.dpr).toFixed(0)} px (angle-true)` +
+      (d.byDistance ? `  ·  colour: distance ${lo.toFixed(1)}–${hi.toFixed(1)} m (pick a colour mode to change)` : ""), A.left, oy - 12);
   }
 
-  /** grid index under the mouse, or -1 */
-  private beamAt(mx: number, my: number): number {
+  /** grid index (of that sensor) under the mouse, or null */
+  private beamAt(mx: number, my: number): { i: number; sensor: number } | null {
     const d = this.cb.data();
-    if (!d) return -1;
+    if (!d) return null;
     if (this.mode === "top") {
       const P = d.geo.pos; let best = 64, i = -1;           // within 8 px
       for (let k = 0; k < d.geo.np; k++) {
@@ -325,13 +349,18 @@ export class View2D {
         const d2 = dx * dx + dy * dy;
         if (d2 < best) { best = d2; i = j % d.grid.N; }        // remembered-wall vertices: N + beam
       }
-      return i;
+      return i < 0 ? null : { i, sensor: d.sensor };
     }
-    if (!this.img.cell) return -1;
-    const A = this.imgArea(), cb = Math.floor((mx - this.img.ox) / this.img.cell), cl = Math.floor((my - this.img.oy) / this.rowH());
-    if (mx >= A.left && mx < A.left + A.w && my >= A.top && my < A.top + A.h && cb >= 0 && cb < d.grid.B && cl >= 0 && cl < d.grid.L)
-      return this.row(cl, d.grid.L, d.upsideDown) * d.grid.B + (d.grid.B - 1 - cb);   // row() is its own inverse
-    return -1;
+    if (!this.img.cell) return null;
+    const A = this.imgArea(), cb = Math.floor((mx - this.img.ox) / this.img.cell);
+    if (mx < A.left || mx >= A.left + A.w || my < A.top || my >= A.top + A.h) return null;
+    const ps = this.panels(d), tops = this.panelTops(ps), rh = this.rowH();
+    for (let k = 0; k < ps.length; k++) {
+      const p = ps[k], cl = Math.floor((my - tops[k]) / rh);
+      if (cb >= 0 && cb < p.grid.B && cl >= 0 && cl < p.grid.L)
+        return { i: this.row(cl, p.grid.L, p.upsideDown) * p.grid.B + (p.grid.B - 1 - cb), sensor: p.sensor };   // row() is its own inverse
+    }
+    return null;
   }
 
   private pickTop(mx: number, my: number, tracks: Track[]): number {
@@ -350,7 +379,7 @@ export class View2D {
     const d = this.cb.data();
     let id = 0;
     if (d && this.mode === "top") id = this.pickTop(e.clientX, e.clientY, d.tracks);
-    else { const i = this.beamAt(e.clientX, e.clientY); if (i >= 0) id = this.cb.objectAt(i); }
+    else { const b = this.beamAt(e.clientX, e.clientY); if (b) id = this.cb.objectAt(b.i, b.sensor); }
     this.cb.select(id);
   }
 
@@ -362,9 +391,9 @@ export class View2D {
       this.tip.hidden = true; this.render();
       return;
     }
-    const i = this.beamAt(e.clientX, e.clientY);
-    if (i < 0) { this.tip.hidden = true; return; }
-    this.tip.textContent = this.cb.describe(i);
+    const b = this.beamAt(e.clientX, e.clientY);
+    if (!b) { this.tip.hidden = true; return; }
+    this.tip.textContent = this.cb.describe(b.i, b.sensor);
     this.tip.hidden = false;
     this.tip.style.left = Math.min(e.clientX + 14, innerWidth - this.tip.offsetWidth - 8) + "px";
     this.tip.style.top = Math.min(e.clientY + 14, innerHeight - this.tip.offsetHeight - 8) + "px";

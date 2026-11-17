@@ -99,8 +99,9 @@ export class App {
     this.scene = new Scene3D($("view"), $("labels"), id => this.select(id));
     this.view2d = new View2D($<HTMLCanvasElement>("view2d"), $("tip"), {
       data: () => this.view2dData(),
-      describe: i => describeBeam(this.beamContext()!, i),
-      objectAt: i => this.trackAt(this.primary, i),
+      images: () => (this.multi ? this.sensors.map(v => this.view2dData(v)).filter((d): d is View2DData => !!d) : []),
+      describe: (i, k) => describeBeam(this.beamContext(this.sensors[k] ?? this.primary)!, i),
+      objectAt: (i, k) => this.trackAt(this.sensors[k] ?? this.primary, i),
       select: id => this.select(id),
       panelWidth: () => (innerWidth > 600 && !$("panel").classList.contains("min") ? $("panel").offsetWidth + 24 : 0),
       bottomInset: () => ($("transport").hidden ? 0 : 76),
@@ -457,7 +458,7 @@ export class App {
     if (this.selected && !this.trackById(this.selected)) this.selected = 0;
     const tracks = this.visibleTracks();
     this.scene.setOverlays(tracks, { boxes: this.ui.boxes, trails: this.ui.trails, labels: this.ui.labels, selected: this.selected });
-    if (this.ui.view !== "3d" && (!only || only.includes(this.primary))) this.view2d.render();
+    if (this.ui.view !== "3d" && (!only || only.includes(this.primary) || (this.multi && this.ui.view === "image"))) this.view2d.render();
     this.objectsPanel.render(tracks, this.selected, !this.cfg.objects.on ? "object detection is off"
       : !objects?.bgModel.ready ? "learning the empty scene…" : tracks.length ? "" : "no objects", this.listDirty);
     $("objCount").textContent = tracks.length ? String(tracks.length) : "";
@@ -471,7 +472,7 @@ export class App {
     const g = v.processor.grid;
     if (!g || !v.geo) return;
     if (refine) v.processor.refine();
-    const image = this.ui.view === "image" && v === this.primary;   // every beam has its cell there
+    const image = this.ui.view === "image";   // every beam has its cell there
     const { tint, fillTint } = this.tinter(v);
     const m = this.multi && this.ui.mergeSurfaces && this.ui.view === "3d" ? v.merge : null;   // the 2D views show one sensor
     const { D, fill, hide } = m && m.ref.length === g.N ? this.merged(g, m) : { D: g.out, fill: this.ui.fillWalls ? g.fill : null, hide: null };
@@ -547,12 +548,13 @@ export class App {
 
   /** the map and the range image: the primary sensor in its own frame (with several sensors, the fused tracks
    *  moved into it) */
-  private view2dData(): View2DData | null {
-    const v = this.primary, g = v.processor.grid, meta = v.processor.meta;
+  private view2dData(v = this.primary): View2DData | null {
+    const g = v.processor.grid, meta = v.processor.meta;
     if (!g || !meta || !v.geo) return null;
-    const { tint } = this.tinter(v), tracks = this.visibleTracks().map(t => (this.multi ? trackInFrame(t, v.pose) : t));
+    // the objects' beams (t.det) are the primary's: the other sensors' range images show no overlays
+    const { tint } = this.tinter(v), tracks = v !== this.primary ? [] : this.visibleTracks().map(t => (this.multi ? trackInFrame(t, v.pose) : t));
     return {
-      grid: g, geo: v.geo, meta, tracks, draw: this.ui.draw, pointSize: this.ui.pointSize, maxRange: this.ui.maxRange,
+      sensor: v.index, name: v.name, grid: g, geo: v.geo, meta, tracks, draw: this.ui.draw, pointSize: this.ui.pointSize, maxRange: this.ui.maxRange,
       overlay: { boxes: this.ui.boxes, labels: this.ui.labels, trails: this.ui.trails, selected: this.selected },
       byDistance: this.ui.colorBy === "uniform", gridStyle: this.ui.gridStyle,
       upsideDown: v.processor.mount === "upsidedown",
@@ -561,9 +563,9 @@ export class App {
     };
   }
 
-  private beamContext(): BeamContext | null {
-    const p = this.processor;
-    return p.grid && p.meta ? { grid: p.grid, meta: p.meta, geo: this.geo, objects: p.objects, cfg: this.cfg, layerBias: p.layerBias, mount: p.mount } : null;
+  private beamContext(v = this.primary): BeamContext | null {
+    const p = v.processor;
+    return p.grid && p.meta && v.geo ? { grid: p.grid, meta: p.meta, geo: v.geo, objects: p.objects, cfg: this.cfg, layerBias: p.layerBias, mount: p.mount } : null;
   }
 
   // ---------- server state & device status ----------

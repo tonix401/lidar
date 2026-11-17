@@ -41,7 +41,7 @@ export class SensorsPanel {
       box.onclick = e => { e.stopPropagation(); this.ev.visible(k, box.checked); };
       const meta = (r.live ? `${r.rate.toFixed(1)} Hz` : "no data") + " · " + (r.calibrated ? "calibrated" : k === 0 ? "the world's origin" : "not calibrated");
       const row = el("div", { className: "orow" + (r.primary ? " sel" : ""), onclick: () => this.ev.primary(k),
-                              title: `${fmtPose(r.pose)}${r.calibrated ? `\ncalibrated ${r.calibrated}` : ""}\nclick: show it in the range image, map and statistics` },
+                              title: `${fmtPose(r.pose)}${r.calibrated ? `\ncalibrated ${r.calibrated}` : ""}\nclick: show it in the map and statistics, and its objects on its range image` },
         el("span", { className: "sw" }), el("span", { className: "nm", textContent: r.name }), el("span", { className: "mt", textContent: meta }), box);
       (row.firstChild as HTMLElement).style.background = css(r.color);
       return row;
