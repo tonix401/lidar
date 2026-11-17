@@ -4,6 +4,7 @@
 // goes through the HTTP API (src/http.ts).
 import { css, trackColor } from "@mrs6000/processing/core/colors";
 import { fmtMB, fmtTime } from "@mrs6000/processing/core/format";
+import { pointInPolygon, type Region } from "@mrs6000/processing/fusion/calib/region";
 import { SettingsForm } from "@mrs6000/web/settingsForm";
 import "@mrs6000/web/settingsForm.css";
 import type { SettingsSaved, SettingsView } from "@mrs6000/wire/settings";
@@ -20,7 +21,7 @@ interface ReplayInfo {
 }
 interface HubState { sensors: SensorStatus[]; recording: RecorderState; replays: ReplayInfo[]; calibration: string | null }
 interface Calibration {
-  target?: string; phase: string; seconds?: number; samples?: number[]; ready?: boolean; solving?: boolean; error?: string;
+  target?: string; region?: Region | null; cut?: number; phase: string; seconds?: number; samples?: number[]; ready?: boolean; solving?: boolean; error?: string;
   result?: { name: string; pose: Pose; problems: string[]; quality: Record<string, unknown> | null }[] | null;
 }
 interface Points { sensors: { name: string; pose: Pose; xy: number[] }[] }
@@ -171,7 +172,7 @@ async function pollCalibration(): Promise<void> {
   $("calInfo").textContent = calib.phase === "empty" ? `Step 1 of 2${where}: keep the area empty while every sensor learns it… ${calib.seconds ?? 0} s`
     : calib.phase === "walk" ? `Step 2 of 2${where}: walk a wide loop through the area every sensor sees (${(calib.seconds ?? 0).toFixed(0)} s; tracked ${(calib.samples ?? []).join(" / ")}×)` + (calib.ready || calib.solving ? " — solving…" : "")
     : calib.phase === "failed" ? `calibration failed: ${calib.error}`
-    : calib.phase === "done" ? `Solved${where}. Check the view below, then use or discard these poses.` : "";
+    : calib.phase === "done" ? `Solved${where}. Check the view below, then use or discard these poses.` + (calib.region ? ` Solved inside the region you drew; ${calib.cut ?? 0} points left out.` : "") : "";
   $("calResult").hidden = calib.phase !== "done";
   if (calib.phase !== "done") { shownPoints = ""; return; }
   $("calTable").querySelector("tbody")!.replaceChildren(...calib.result!.map((r, k) => h("tr", {},
@@ -180,8 +181,68 @@ async function pollCalibration(): Promise<void> {
     h("td", { textContent: quality(r.quality, k) }),
     h("td", {}, ...(r.problems.length ? r.problems.map(p => h("div", { className: "warn", textContent: p })) : ["–"])))));
   const key = names.join() + JSON.stringify(calib.result!.map(r => r.pose));
-  if (key !== shownPoints) { shownPoints = key; try { drawPoints(await api<Points>("GET", "/api/calibration/points")); } catch (e) { problem(e); } }
+  if (key !== shownPoints) {
+    shownPoints = key;
+    region = calib.region ? calib.region.map(p => [...p] as [number, number]) : []; drawing = false;
+    try { points = await api<Points>("GET", "/api/calibration/points"); } catch (e) { problem(e); }
+  }
+  redraw();
 }
+
+// ---------- the region: a polygon on the view from above, outside of which the next solve leaves everything out ----------
+let points: Points | null = null, region: Region = [], drawing = false, drag = -1;
+let toWorld = (_px: number, _py: number): [number, number] => [0, 0], toPx = (_x: number, _y: number): [number, number] => [0, 0];
+const closed = () => !drawing && region.length >= 3;
+
+function redraw(): void {
+  if (points) drawPoints(points);
+  const sel = calib.region?.length ? calib.region : null;
+  $("calRegionDraw").textContent = drawing ? "Cancel drawing" : region.length ? "Draw again" : "Draw region";
+  $("calRegionClear").hidden = !region.length;
+  const solve = $("calResolve");
+  solve.hidden = !(closed() || (!region.length && sel));
+  solve.textContent = closed() ? "Solve again inside the region" : "Solve again without the region";
+}
+
+/** where the pointer is on the canvas, in canvas pixels */
+const canvasPx = (cv: HTMLCanvasElement, e: PointerEvent): [number, number] => {
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height];
+};
+const vertexAt = (px: number, py: number): number => region.findIndex(v => { const [x, y] = toPx(v[0], v[1]); return Math.hypot(x - px, y - py) <= 9 * (devicePixelRatio || 1); });
+
+{
+  const cv = $<HTMLCanvasElement>("calView");
+  cv.addEventListener("pointerdown", e => {
+    const [px, py] = canvasPx(cv, e);
+    if (drawing) {
+      if (region.length >= 3 && vertexAt(px, py) === 0) drawing = false;
+      else region.push(toWorld(px, py));
+      redraw();
+    } else if (region.length) {
+      drag = vertexAt(px, py);
+      if (drag >= 0) cv.setPointerCapture(e.pointerId);
+    }
+  });
+  cv.addEventListener("pointermove", e => {
+    if (drag < 0) return;
+    region[drag] = toWorld(...canvasPx(cv, e));
+    redraw();
+  });
+  cv.addEventListener("pointerup", () => { drag = -1; });
+}
+window.addEventListener("keydown", e => { if (e.key === "Escape" && drawing) { drawing = false; region = calib.region?.map(p => [...p] as [number, number]) ?? []; redraw(); } });
+$("calRegionDraw").onclick = () => {
+  if (drawing) { drawing = false; region = calib.region?.map(p => [...p] as [number, number]) ?? []; }
+  else { drawing = true; region = []; }
+  redraw();
+};
+$("calRegionClear").onclick = () => { drawing = false; region = []; redraw(); };
+$("calResolve").onclick = () => {
+  const body = { action: "resolve", region: closed() ? region : null };
+  $<HTMLButtonElement>("calResolve").disabled = true;
+  act(api("POST", "/api/calibration", body).finally(() => { $<HTMLButtonElement>("calResolve").disabled = false; }), pollCalibration);
+};
 
 function quality(q: Record<string, unknown> | null, k: number): string {
   if (!q) return "–";
@@ -205,13 +266,20 @@ function drawPoints(p: Points): void {
   const pad = 20 * dpr, scale = Math.min((W - 2 * pad) / Math.max(x1 - x0, 1), (H - 2 * pad) / Math.max(y1 - y0, 1));
   const X = (x: number) => pad + (x - x0) * scale + ((W - 2 * pad) - (x1 - x0) * scale) / 2;
   const Y = (y: number) => H - pad - (y - y0) * scale - ((H - 2 * pad) - (y1 - y0) * scale) / 2;   // y up, as seen from above
+  const offX = ((W - 2 * pad) - (x1 - x0) * scale) / 2, offY = ((H - 2 * pad) - (y1 - y0) * scale) / 2;
+  toWorld = (px, py) => [(px - pad - offX) / scale + x0, (H - pad - offY - py) / scale + y0];
+  toPx = (x, y) => [X(x), Y(y)];
+  const cut = closed() ? region : null;
   g.clearRect(0, 0, W, H);
   g.strokeStyle = cs.getPropertyValue("--grid"); g.lineWidth = 1;
   for (let x = Math.ceil(x0); x <= x1; x++) { g.beginPath(); g.moveTo(X(x), 0); g.lineTo(X(x), H); g.stroke(); }
   for (let y = Math.ceil(y0); y <= y1; y++) { g.beginPath(); g.moveTo(0, Y(y)); g.lineTo(W, Y(y)); g.stroke(); }
   p.sensors.forEach((s, k) => {
-    g.fillStyle = color(k); g.globalAlpha = 0.7;
-    for (let i = 0; i < s.xy.length; i += 2) g.fillRect(X(s.xy[i]) - dpr, Y(s.xy[i + 1]) - dpr, 2 * dpr, 2 * dpr);
+    g.fillStyle = color(k);
+    for (let i = 0; i < s.xy.length; i += 2) {
+      g.globalAlpha = cut && !pointInPolygon(s.xy[i], s.xy[i + 1], cut) ? 0.15 : 0.7;
+      g.fillRect(X(s.xy[i]) - dpr, Y(s.xy[i + 1]) - dpr, 2 * dpr, 2 * dpr);
+    }
     g.globalAlpha = 1;
     const a = s.pose.yaw * Math.PI / 180, px = X(s.pose.x), py = Y(s.pose.y);
     g.beginPath(); g.arc(px, py, 5 * dpr, 0, 2 * Math.PI); g.fill();
@@ -220,6 +288,14 @@ function drawPoints(p: Points): void {
     g.fillStyle = cs.getPropertyValue("--text"); g.font = `${12 * dpr}px system-ui`;
     g.fillText(s.name, px + 8 * dpr, py - 8 * dpr);
   });
+  if (region.length) {
+    g.strokeStyle = cs.getPropertyValue("--text"); g.fillStyle = cs.getPropertyValue("--text"); g.lineWidth = 2 * dpr;
+    g.beginPath();
+    region.forEach((v, i) => { const [x, y] = toPx(v[0], v[1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+    if (closed()) { g.closePath(); g.globalAlpha = 0.08; g.fill(); g.globalAlpha = 1; }
+    g.stroke();
+    region.forEach((v, i) => { const [x, y] = toPx(v[0], v[1]); g.beginPath(); g.arc(x, y, (i === 0 && drawing ? 6 : 4) * dpr, 0, 2 * Math.PI); g.fill(); });
+  }
 }
 
 // ---------- sources and who watches them ----------

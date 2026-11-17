@@ -17,6 +17,7 @@
 import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { NotFoundError } from "@mrs6000/server-common/errors";
+import { checkRegion, type Region } from "@mrs6000/processing/fusion/calib/region";
 import { body, errorResponse, guard, json, needToken, notBuilt, oneOf, staticFiles, InvalidRequest } from "@mrs6000/server-common/http";
 import { settingsView } from "@mrs6000/server-common/settings";
 import type { SettingsSaved } from "@mrs6000/wire/settings";
@@ -90,12 +91,19 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
     }
     if (p === "/api/calibration" && m === "POST") {
       admin(req);
-      const b = await body(req), action = oneOf(b.action, ["start", "cancel", "accept", "discard"], "action");
+      const b = await body(req), action = oneOf(b.action, ["start", "cancel", "accept", "discard", "resolve"], "action");
       if (action === "start") {
         if (b.recording !== undefined && typeof b.recording !== "string") throw new InvalidRequest("recording: a recording name");
         const opt = (b.options ?? {}) as Record<string, number>;
         return json(hub.startCalibration((b.recording as string | undefined) ?? null,
                                          { walkSeconds: opt.walkSeconds, minSamples: opt.minSamples, emptySeconds: opt.emptySeconds }).state());
+      }
+      if (action === "resolve") {
+        let region: Region | null = null;
+        if (b.region !== null && b.region !== undefined) {
+          try { region = checkRegion(b.region); } catch (e) { throw new InvalidRequest(`region: ${e instanceof Error ? e.message : e}`); }
+        }
+        return json((await hub.resolveCalibration(region)).state());
       }
       if (action === "accept") return json(await hub.acceptCalibration());
       hub.stopCalibration();

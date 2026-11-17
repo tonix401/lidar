@@ -9,6 +9,7 @@ import { log } from "@mrs6000/server-common/log";
 import type { MountSetting, SensorFrame } from "@mrs6000/server-common/sensor/core";
 import type { ReplayMode, SensorStatus } from "@mrs6000/wire/source";
 import { Calibration } from "./calibration";
+import type { Region } from "@mrs6000/processing/fusion/calib/region";
 import { LiveSensor } from "./live";
 import type { RecorderState } from "./recording/recorder";
 import { openRecording, Session, SessionRecorder, storeSessionRig } from "./recording/session";
@@ -193,6 +194,13 @@ export class Hub {
     }
     if (names.length < 2) throw new ValueError("calibration needs at least two sensors");
     this.calibration = new Calibration(recording === null ? "live" : basename(path!), names, this.mounts(names), o, path);
+    return this.calibration;
+  }
+
+  /** solve the finished calibration again inside `region` (null: everywhere) */
+  async resolveCalibration(region: Region | null): Promise<Calibration> {
+    if (!this.calibration) throw new ValueError("no calibration to solve again");
+    await this.calibration.resolve(region);
     return this.calibration;
   }
 

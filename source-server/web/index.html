@@ -46,6 +46,11 @@
       <div class="scroll"><table id="calTable"><thead><tr><th>Sensor</th><th>Pose</th><th>Quality</th><th>Problems</th></tr></thead><tbody></tbody></table></div>
       <p class="note">From above, every sensor's empty scene in the solved poses: walls seen by several sensors should lie on top of each other.</p>
       <canvas id="calView" width="900" height="520"></canvas>
+      <p class="note" id="calRegionNote">Walls or things outside the area you care about can be left out: draw its outline on the view (click the corners,
+        click the first one to close, drag a corner to move it), then solve again inside it. Everything outside is thrown away.</p>
+      <div class="row">
+        <button id="calRegionDraw">Draw region</button><button id="calRegionClear" hidden>Clear region</button><button id="calResolve" hidden></button>
+      </div>
       <div class="row"><button id="calAccept" class="primary">Use these poses</button><button id="calDiscard">Discard</button></div>
     </div>
   </section>

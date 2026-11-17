@@ -296,6 +296,18 @@ describe("calibration", () => {
     const pts = await call("GET", "/api/calibration/points");
     expect(pts.sensors.map((s: { name: string }) => s.name)).toEqual(["a", "b", "c"]);
     expect(pts.sensors.every((s: { xy: number[] }) => s.xy.length > 100)).toBe(true);
+    // solving again inside a region (the east strip with the pillar left out), then everywhere again
+    const region = [[-5, -4], [3, -4], [3, 4], [-5, 4]];
+    const inside = await call("POST", "/api/calibration", { action: "resolve", region });
+    expect([inside.phase, inside.region]).toEqual(["done", region]);
+    expect(inside.cut).toBeGreaterThan(0);
+    expect(inside.result).toHaveLength(3);
+    const cutPts = await call("GET", "/api/calibration/points");
+    expect(cutPts.sensors.every((s: { xy: number[] }) => s.xy.length > 100)).toBe(true);
+    expect((await call("POST", "/api/calibration", { action: "resolve", region: [[0, 0], [1, 1]] })).error).toMatch(/region.*corners/);
+    expect((await call("POST", "/api/calibration", { action: "resolve", region: [[0, 0], [2, 2], [2, 0], [0, 2]] })).error).toMatch(/cross/);
+    const all = await call("POST", "/api/calibration", { action: "resolve", region: null });
+    expect([all.region, all.cut]).toEqual([null, 0]);
     const accepted = await call("POST", "/api/calibration", { action: "accept" });
     expect(accepted.sensors.every((e: { pose?: unknown }) => e.pose)).toBe(true);
     const hdrs = ["a", "b", "c"].map(n => ({ name: n, ...readTpcHeader(join(path, `${n}.tpc`)) }));   // the poses are in each file's header

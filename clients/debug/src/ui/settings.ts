@@ -20,7 +20,7 @@ export interface UiSettings {
 }
 
 export const defaultUi = (): UiSettings => ({
-  colorBy: "dist", layer: -1, maxRange: 60, mount: "upright", paused: false, draw: "surface+points", pointSize: 1, view: "3d",
+  colorBy: "mainDist", layer: -1, maxRange: 60, mount: "upright", paused: false, draw: "surface+points", pointSize: 1, view: "3d",
   highlight: true, dimBg: true, boxes: true, labels: true, trails: true, follow: false, fillWalls: true, mergeSurfaces: true, gridStyle: "rings",
 });
 
