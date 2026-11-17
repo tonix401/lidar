@@ -2,11 +2,12 @@
 // registry (store.ts), a recording's in its files' headers (recording/session.ts); calibration (calibration.ts) and PUT /api/rig change them.
 import { ValueError } from "@mrs6000/server-common/errors";
 import { checkName } from "@mrs6000/server-common/names";
+import { checkRegion } from "@mrs6000/processing/fusion/calib/region";
 import { POSE_KEYS, type Pose, type Rig, type RigSensor } from "@mrs6000/wire/rig";
 
 export { rigFor, type Rig, type RigSensor } from "@mrs6000/wire/rig";
 
-const SENSOR_KEYS = ["pose", "time_offset_s", "calibrated", "quality"] as const;   // what a PUT may change
+const SENSOR_KEYS = ["pose", "time_offset_s", "calibrated", "quality", "region"] as const;   // what a PUT may change
 
 export interface SensorSpec { name: string; ip: string }
 
@@ -30,6 +31,10 @@ export function checkPose(pose: unknown): Pose {
   return out;
 }
 
+function checkRegionOf(region: unknown) {
+  try { return checkRegion(region); } catch (e) { throw new ValueError(`region: ${e instanceof Error ? e.message : e}`); }
+}
+
 /** the rig with `update`'s sensors applied by name (only the keys a PUT may change; others are kept as they are) */
 export function mergeRig(rig: Rig, update: unknown): Rig {
   const sensors = new Map((rig.sensors ?? []).map(s => [s.name, { ...s }]));
@@ -39,7 +44,10 @@ export function mergeRig(rig: Rig, update: unknown): Rig {
     const name = checkName(u && typeof u === "object" ? (u as RigSensor).name : null);
     const s = sensors.get(name) ?? { name };
     sensors.set(name, s);
-    for (const k of SENSOR_KEYS) if (k in u) (s as Record<string, unknown>)[k] = k === "pose" ? checkPose(u[k]) : u[k];
+    for (const k of SENSOR_KEYS) if (k in u) {
+      if (k === "region") { if (u[k] === null) delete s.region; else s.region = checkRegionOf(u[k]); }   // null: no region
+      else (s as Record<string, unknown>)[k] = k === "pose" ? checkPose(u[k]) : u[k];
+    }
   }
   return { ...rig, sensors: [...sensors.values()] };
 }

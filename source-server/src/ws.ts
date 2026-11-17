@@ -11,8 +11,10 @@ import { log } from "@mrs6000/server-common/log";
 import type { SensorFrame } from "@mrs6000/server-common/sensor/core";
 import { frameMessage, type Frame, type Header } from "@mrs6000/wire/frame";
 import { ACTIONS, SOURCE_PROTOCOL, type FrameMeta, type ReplayMode } from "@mrs6000/wire/source";
+import { Crop } from "./crop";
 import type { Hub } from "./hub";
 import type { Replay, ReplayFrame } from "./replay";
+import type { Rig } from "./rig";
 import type { Store } from "./store";
 
 export const MAX_BUFFERED = 8 * 1024 * 1024;
@@ -34,6 +36,8 @@ export interface ConsumerInfo {
 
 export class Consumers {
   private conns = new Set<WS>();
+  private crop = new Crop();
+  private rigs = new Map<string, { version: number; rig: Rig }>();   // each source's rig, as of its version (frames come far more often than it changes)
   private timer: ReturnType<typeof setInterval>;
   readonly websocket: WebSocketHandler<Conn>;
 
@@ -45,6 +49,7 @@ export class Consumers {
       },
       rig: (source, rig, version) => this.send(source, { type: "rig", source, version, rig }),
       replayClosed: (id, reason) => {
+        this.rigs.delete(id);
         for (const ws of this.on(id)) { this.out(ws, { type: "closed", source: id, reason }); ws.data.source = null; ws.close(4004, reason); }
       },
     };
@@ -167,10 +172,22 @@ export class Consumers {
       const c = ws.data;
       if (c.layouts.get(sensor) !== hdr) { this.out(ws, { type: "layout", source, sensor, hdr }, true); c.layouts.set(sensor, hdr); }
       if (!keep && ws.getBufferedAmount() > MAX_BUFFERED) { c.dropped++; continue; }
-      msg ??= frameMessage({ v: SOURCE_PROTOCOL, type: "frame", source, sensor, ...meta } satisfies FrameMeta, f.d, f.r);
+      if (!msg) {
+        const g = this.cut(source, sensor, f, hdr);
+        msg = frameMessage({ v: SOURCE_PROTOCOL, type: "frame", source, sensor, ...meta } satisfies FrameMeta, g.d, g.r);
+      }
       ws.sendBinary(msg);
       c.sent++;
     }
+  }
+
+  /** the frame without the beams outside the sensor's region, if its rig entry has one (rig.ts) */
+  private cut(source: string, sensor: string, f: Frame | SensorFrame, hdr: Header): Frame | SensorFrame {
+    const version = this.hub.rigVersionOf(source);
+    let c = this.rigs.get(source);
+    if (c?.version !== version) this.rigs.set(source, c = { version, rig: this.hub.rig(source) });
+    const entry = c.rig.sensors.find(s => s.name === sensor);
+    return entry?.region ? this.crop.apply(sensor, f, hdr, entry, this.hub.mounts([sensor])[0]) : f;
   }
 
   /** a JSON message to everyone on a source */

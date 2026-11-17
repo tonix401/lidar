@@ -55,8 +55,8 @@ export class Calibration {
 
   get result(): SensorCalibration[] | null { return this.calibrator.result; }
 
-  /** the rig entries to store */
-  entries(): Record<string, unknown>[] { return (this.calibrator.result ?? []).map(r => rigEntry(r)); }
+  /** the rig entries to store: the poses, and the region drawn on them (null: none, which also clears an earlier one: its world is gone) */
+  entries(): Record<string, unknown>[] { return (this.calibrator.result ?? []).map(r => ({ ...rigEntry(r), region: this.region })); }
 
   /** a live frame of sensor `name` */
   push(name: string, f: SensorFrame): void {

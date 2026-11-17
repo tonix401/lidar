@@ -308,8 +308,11 @@ describe("calibration", () => {
     expect((await call("POST", "/api/calibration", { action: "resolve", region: [[0, 0], [2, 2], [2, 0], [0, 2]] })).error).toMatch(/cross/);
     const all = await call("POST", "/api/calibration", { action: "resolve", region: null });
     expect([all.region, all.cut]).toEqual([null, 0]);
+    const kept = [[-10, -10], [10, -10], [10, 10], [-10, 10]];      // the one to keep: around the whole room (the world has the first sensor at its origin), so the poses stay as they were
+    await call("POST", "/api/calibration", { action: "resolve", region: kept });
     const accepted = await call("POST", "/api/calibration", { action: "accept" });
     expect(accepted.sensors.every((e: { pose?: unknown }) => e.pose)).toBe(true);
+    expect(accepted.sensors.map((e: { region?: unknown }) => e.region)).toEqual([kept, kept, kept]);   // stored with the poses: the stream is cut by it
     const hdrs = ["a", "b", "c"].map(n => ({ name: n, ...readTpcHeader(join(path, `${n}.tpc`)) }));   // the poses are in each file's header
     expect(hdrs.map(h => [h.sensor, h.index])).toEqual([["a", 0], ["b", 1], ["c", 2]]);
     const first = hdrs[0].truth!, world = invert(fromParams({ ...first, z: 0, pitch: 0, roll: 0 }));   // a's levelled frame
