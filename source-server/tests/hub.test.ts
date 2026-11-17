@@ -310,6 +310,20 @@ describe("calibration", () => {
     expect([all.region, all.cut]).toEqual([null, 0]);
     const kept = [[-10, -10], [10, -10], [10, 10], [-10, 10]];      // the one to keep: around the whole room (the world has the first sensor at its origin), so the poses stay as they were
     await call("POST", "/api/calibration", { action: "resolve", region: kept });
+    // the world's origin: another sensor, then back
+    expect((await call("GET", "/api/calibration")).origin).toBe("a");
+    const poseOf = (st: any, n: string) => st.result.find((r: any) => r.name === n).pose;
+    const before = ["a", "b", "c"].map(n => poseOf(all, n));
+    const moved = await call("POST", "/api/calibration", { action: "origin", sensor: "c" });
+    expect(moved.origin).toBe("c");
+    expect(["x", "y", "yaw"].map(k => Math.abs(poseOf(moved, "c")[k]) < 1e-6)).toEqual([true, true, true]);
+    expect(Math.hypot(poseOf(moved, "a").x - poseOf(moved, "b").x, poseOf(moved, "a").y - poseOf(moved, "b").y))
+      .toBeCloseTo(Math.hypot(before[0].x - before[1].x, before[0].y - before[1].y), 6);   // a and b did not move relative to each other
+    expect((await call("POST", "/api/calibration", { action: "origin", sensor: "zz" })).error).toMatch(/unknown sensor/);
+    const again = await call("POST", "/api/calibration", { action: "resolve", region: null });      // a solve keeps the chosen origin
+    expect([again.origin, Math.abs(poseOf(again, "c").x) < 1e-6]).toEqual(["c", true]);
+    await call("POST", "/api/calibration", { action: "origin", sensor: "a" });
+    await call("POST", "/api/calibration", { action: "resolve", region: kept });
     const accepted = await call("POST", "/api/calibration", { action: "accept" });
     expect(accepted.sensors.every((e: { pose?: unknown }) => e.pose)).toBe(true);
     expect(accepted.sensors.map((e: { region?: unknown }) => e.region)).toEqual([kept, kept, kept]);   // stored with the poses: the stream is cut by it
@@ -323,5 +337,12 @@ describe("calibration", () => {
       expect(err.angle).toBeLessThan(0.5);
     }
     expect(r.hub.calibration).toBeNull();
+    // the stored rig's origin, on the recording: poses and regions follow, and a sensor that is unknown is refused
+    const rig = await call("POST", "/api/rig/origin?recording=calib", { sensor: "c" });
+    const c = rig.sensors.find((e: any) => e.name === "c");
+    expect(["x", "y", "yaw"].map(k => Math.abs(c.pose[k]) < 1e-3)).toEqual([true, true, true]);
+    expect(rig.sensors.every((e: any) => e.region?.length === 4)).toBe(true);
+    expect((await call("GET", "/api/rig?recording=calib")).sensors.find((e: any) => e.name === "c").pose).toEqual(c.pose);
+    expect((await call("POST", "/api/rig/origin?recording=calib", { sensor: "zz" })).error).toMatch(/no pose/);
   });
 });

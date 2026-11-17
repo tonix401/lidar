@@ -7,6 +7,7 @@
 import { defaultConfig } from "@mrs6000/processing/config/config";
 import { gridCloud, transformCloud } from "@mrs6000/processing/fusion/calib/icp";
 import { Calibrator, type CalibratorOptions, type Processed } from "@mrs6000/processing/fusion/calib/calibrator";
+import { moveOrigin, moveRegion } from "@mrs6000/processing/fusion/calib/origin";
 import { cropToRegion, type Region } from "@mrs6000/processing/fusion/calib/region";
 import { rigEntry, type CalibInput, type SensorCalibration } from "@mrs6000/processing/fusion/calib/rig";
 import { toParams } from "@mrs6000/processing/fusion/pose";
@@ -17,7 +18,7 @@ import { openRecording, type AnyRecording } from "./recording/session";
 
 export interface CalibrationState {
   target: string;                            // "live" or a recording's name
-  region: Region | null; cut: number;        // the region the solve was limited to, and how many beams and walk samples it left out
+  origin: string; region: Region | null; cut: number;        // the region the solve was limited to, and how many beams and walk samples it left out
   phase: Calibrator["phase"]; seconds: number; samples: number[]; ready: boolean; solving: boolean; error: string;
   result: { name: string; pose: ReturnType<typeof toParams>; timeOffset: number; problems: string[]; quality: unknown }[] | null;
 }
@@ -33,6 +34,7 @@ export class Calibration {
   points: CalibrationPoints | null = null;
   region: Region | null = null;
   cut = 0;
+  origin: string;                              // the sensor that is the world's origin: the first, until changed
   private data: CalibData[] | null = null;      // what the first solve used, uncropped: every re-solve starts from it
   private views: Processed[];
   private solving = false;
@@ -43,6 +45,7 @@ export class Calibration {
   constructor(readonly target: string, readonly names: string[], mounts: MountSetting[], o: CalibratorOptions = {}, recording: string | null = null,
               threaded = true) {
     this.calibrator = new Calibrator(names, o);
+    this.origin = names[0];
     this.views = names.map(() => ({ grid: null, objects: { confirmed: [], bgModel: { ready: false, bg: EMPTY } } }));
     this.busy = names.map(() => 0);
     this.set = new SensorSet(names.map((name, k) => ({ name, mount: mounts[k] })), defaultConfig(), {
@@ -68,7 +71,7 @@ export class Calibration {
 
   state(): CalibrationState {
     const c = this.calibrator, p = c.progress();
-    return { target: this.target, region: this.region, cut: this.cut, phase: c.phase, seconds: Math.round(p.seconds * 10) / 10, samples: p.samples, ready: p.ready, solving: this.solving, error: c.error,
+    return { target: this.target, origin: this.origin, region: this.region, cut: this.cut, phase: c.phase, seconds: Math.round(p.seconds * 10) / 10, samples: p.samples, ready: p.ready, solving: this.solving, error: c.error,
              result: c.result?.map(r => ({ name: r.name, pose: toParams(r.pose), timeOffset: r.timeOffset, problems: r.problems,
                                            quality: (rigEntry(r) as { quality?: unknown }).quality ?? null })) ?? null };
   }
@@ -127,6 +130,24 @@ export class Calibration {
     }
   }
 
+  /** move the world to `sensor`'s levelled frame (it stands at x = y = yaw = 0 then); the others keep their place relative to it */
+  setOrigin(sensor: string): void {
+    const res = this.calibrator.result, k = this.names.indexOf(sensor);
+    if (this.calibrator.phase !== "done" || !res || !this.data || this.solving) throw new ValueError("there is no finished calibration to change");
+    if (k < 0) throw new ValueError(`unknown sensor ${sensor}`);
+    const from = res[k].pose;
+    this.placeAt(sensor);
+    if (this.region) this.region = moveRegion(this.region, from);
+  }
+
+  /** the result's poses in the world of `sensor` (a solve gives the first sensor's) */
+  private placeAt(sensor: string): void {
+    const res = this.calibrator.result!, poses = moveOrigin(res.map(r => r.pose), this.names.indexOf(sensor));
+    res.forEach((r, i) => { r.pose = poses[i]; });
+    this.origin = sensor;
+    this.points = topDown(res, this.data!);
+  }
+
   /** solve again with only what lies inside `region` (world x, y pairs, in the poses of the current result), or with
    *  everything for null. Always from the collected data, so a new region replaces the last instead of adding to it. */
   async resolve(region: Region | null): Promise<void> {
@@ -141,6 +162,7 @@ export class Calibration {
       }
       await this.run(data, walks);
       this.region = region; this.cut = cut;
+      if (this.origin !== this.names[0]) this.placeAt(this.origin);   // a solve puts the first sensor at the origin again
     } finally {
       this.solving = false;
     }

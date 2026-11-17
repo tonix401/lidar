@@ -64,6 +64,12 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
       const rec = q("recording");
       return json(rec === null ? hub.rig("live") : hub.recordingRig(rec));
     }
+    if (p === "/api/rig/origin" && m === "POST") {
+      admin(req);
+      const sensor = (await body(req)).sensor;
+      if (typeof sensor !== "string") throw new InvalidRequest("sensor: a sensor name");
+      return json(await hub.setOrigin(sensor, q("recording")));
+    }
     if (p === "/api/rig" && m === "PUT") { admin(req); return json(await hub.setRig(await body(req), q("recording"))); }
 
     if (p === "/api/recordings" && m === "GET") return json(listRecordings(hub.recDir));
@@ -91,12 +97,16 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
     }
     if (p === "/api/calibration" && m === "POST") {
       admin(req);
-      const b = await body(req), action = oneOf(b.action, ["start", "cancel", "accept", "discard", "resolve"], "action");
+      const b = await body(req), action = oneOf(b.action, ["start", "cancel", "accept", "discard", "resolve", "origin"], "action");
       if (action === "start") {
         if (b.recording !== undefined && typeof b.recording !== "string") throw new InvalidRequest("recording: a recording name");
         const opt = (b.options ?? {}) as Record<string, number>;
         return json(hub.startCalibration((b.recording as string | undefined) ?? null,
                                          { walkSeconds: opt.walkSeconds, minSamples: opt.minSamples, emptySeconds: opt.emptySeconds }).state());
+      }
+      if (action === "origin") {
+        if (typeof b.sensor !== "string") throw new InvalidRequest("sensor: a sensor name");
+        return json(hub.setCalibrationOrigin(b.sensor).state());
       }
       if (action === "resolve") {
         let region: Region | null = null;

@@ -21,7 +21,7 @@ interface ReplayInfo {
 }
 interface HubState { sensors: SensorStatus[]; recording: RecorderState; replays: ReplayInfo[]; calibration: string | null }
 interface Calibration {
-  target?: string; region?: Region | null; cut?: number; phase: string; seconds?: number; samples?: number[]; ready?: boolean; solving?: boolean; error?: string;
+  target?: string; origin?: string; region?: Region | null; cut?: number; phase: string; seconds?: number; samples?: number[]; ready?: boolean; solving?: boolean; error?: string;
   result?: { name: string; pose: Pose; problems: string[]; quality: Record<string, unknown> | null }[] | null;
 }
 interface Points { sensors: { name: string; pose: Pose; xy: number[] }[] }
@@ -83,7 +83,17 @@ async function refreshSlow(): Promise<void> {
 }
 
 // ---------- sensors ----------
+/** the sensor at the world's origin: x = y = yaw = 0 (its pose is then just its height and tilt) */
+const atOrigin = (p: Pose) => Math.abs(p.x) < 1e-3 && Math.abs(p.y) < 1e-3 && Math.abs(p.yaw) < 1e-2;
+const originTitle = "the world's origin: the point on the floor below this sensor, x along its forward direction. Changing it moves every pose, no recalibration needed.";
+
 const fmtPose = (p: Pose) => `${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)} m · yaw ${p.yaw.toFixed(1)}° · pitch ${p.pitch.toFixed(1)}° · roll ${p.roll.toFixed(1)}°`;
+
+/** "world origin" for the sensor that is it, else a button that makes this one it */
+function originControl(can: boolean, make: () => void): HTMLElement {
+  if (!can) return h("span", { className: "tag", textContent: "world origin", title: originTitle });
+  return h("button", { textContent: "Make origin", title: originTitle, onclick: make });
+}
 
 function renderSensors(): void {
   const live = new Map((hub?.sensors ?? []).map(s => [s.name, s]));
@@ -107,7 +117,8 @@ function renderSensors(): void {
       h("td", {}, ip), h("td", {}, mount), h("td", {}, stream),
       h("td", { textContent: s && s.clock.samples ? `${(s.clock.offset_s * 1000).toFixed(1)} ms · ${s.clock.drift_ppm.toFixed(1)} ppm` : "–" }),
       h("td", { textContent: s?.device ? s.device + (s.upside_down ? " (on its head)" : "") : "–" }),
-      h("td", { textContent: e.pose ? fmtPose(e.pose) : "not calibrated", title: e.calibrated ? `calibrated ${e.calibrated}` : "" }),
+      h("td", { title: e.calibrated ? `calibrated ${e.calibrated}` : "" }, e.pose ? fmtPose(e.pose) : "not calibrated", ...(e.pose ? [" ", originControl(!atOrigin(e.pose),
+        () => act(api("POST", "/api/rig/origin", { sensor: e.name })))] : [])),
       h("td", { className: "actions" }, del));
   });
   $("sensors").querySelector("tbody")!.replaceChildren(...(rows.length ? rows : [h("tr", {}, h("td", { colSpan: 8, className: "empty", textContent: "no sensors yet: add one below" }))]));
@@ -162,7 +173,7 @@ $("calCancel").onclick = () => act(api("POST", "/api/calibration", { action: "ca
 $("calDiscard").onclick = () => act(api("POST", "/api/calibration", { action: "discard" }), pollCalibration);
 $("calAccept").onclick = () => act(api("POST", "/api/calibration", { action: "accept" }), () => { void refresh(); void pollCalibration(); });
 
-let shownPoints = "";
+let shownPoints = "", shownTable = "";
 async function pollCalibration(): Promise<void> {
   try { calib = await api<Calibration>("GET", "/api/calibration"); } catch { return; }
   const running = calib.phase === "empty" || calib.phase === "walk", names = calib.result?.map(r => r.name) ?? [];
@@ -174,12 +185,16 @@ async function pollCalibration(): Promise<void> {
     : calib.phase === "failed" ? `calibration failed: ${calib.error}`
     : calib.phase === "done" ? `Solved${where}. Check the view below, then use or discard these poses.` + (calib.region ? ` Solved inside the region you drew; ${calib.cut ?? 0} points left out.` : "") : "";
   $("calResult").hidden = calib.phase !== "done";
-  if (calib.phase !== "done") { shownPoints = ""; return; }
+  if (calib.phase !== "done") { shownPoints = ""; shownTable = ""; return; }
+  const sig = JSON.stringify([calib.origin, calib.result]);
+  if (sig !== shownTable) {                                  // only when it changed: a click on a button must not meet a fresh row
+    shownTable = sig;
   $("calTable").querySelector("tbody")!.replaceChildren(...calib.result!.map((r, k) => h("tr", {},
     h("td", {}, h("span", { className: "sw", style: `background:${color(k)}` } as never), r.name),
-    h("td", { textContent: fmtPose(r.pose) }),
-    h("td", { textContent: quality(r.quality, k) }),
+    h("td", {}, fmtPose(r.pose), " ", originControl(r.name !== calib.origin, () => act(api("POST", "/api/calibration", { action: "origin", sensor: r.name }), pollCalibration))),
+    h("td", { textContent: quality(r.quality, r.name === calib.origin) }),
     h("td", {}, ...(r.problems.length ? r.problems.map(p => h("div", { className: "warn", textContent: p })) : ["–"])))));
+  }
   const key = names.join() + JSON.stringify(calib.result!.map(r => r.pose));
   if (key !== shownPoints) {
     shownPoints = key;
@@ -244,10 +259,10 @@ $("calResolve").onclick = () => {
   act(api("POST", "/api/calibration", body).finally(() => { $<HTMLButtonElement>("calResolve").disabled = false; }), pollCalibration);
 };
 
-function quality(q: Record<string, unknown> | null, k: number): string {
+function quality(q: Record<string, unknown> | null, origin: boolean): string {
   if (!q) return "–";
   const n = (v: unknown, f: (x: number) => string) => (typeof v === "number" && isFinite(v) ? f(v) : null);
-  const parts = [n(q.floor_rms_mm, v => `floor ${v.toFixed(1)} mm`), k === 0 ? "the world's origin" : n(q.walk_rms_cm, v => `walk ${v.toFixed(1)} cm`),
+  const parts = [n(q.floor_rms_mm, v => `floor ${v.toFixed(1)} mm`), origin ? "the world's origin" : n(q.walk_rms_cm, v => `walk ${v.toFixed(1)} cm`),
                  n(q.icp_median_mm, v => `scene ${v.toFixed(1)} mm`), n(q.overlap, v => `${(v * 100).toFixed(0)} % overlap`)];
   return parts.filter(Boolean).join(" · ") || "–";
 }
