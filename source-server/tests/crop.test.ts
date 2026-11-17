@@ -41,14 +41,3 @@ describe("the region in the rig", () => {
     expect(mergeRig(rig, { sensors: [{ name: "a", region: null }] }).sensors[0].region).toBeUndefined();
   });
 });
-
-describe("a sensor's own floor in the rig", () => {
-  it("is stored, checked and cleared with null", () => {
-    const floor = { pitch: 0.4, roll: -0.2, height: 1.1 };
-    const rig = mergeRig({ sensors: [{ name: "a" }] }, { sensors: [{ name: "a", floor }] });
-    expect(rig.sensors[0].floor).toEqual(floor);
-    expect(() => mergeRig(rig, { sensors: [{ name: "a", floor: { pitch: 1 } }] })).toThrow(/floor/);
-    expect(() => mergeRig(rig, { sensors: [{ name: "a", floor: { pitch: "x", roll: 0, height: 1 } }] })).toThrow(/floor/);
-    expect(mergeRig(rig, { sensors: [{ name: "a", floor: null }] }).sensors[0].floor).toBeUndefined();
-  });
-});

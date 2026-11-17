@@ -34,7 +34,7 @@ one). The pages draw their settings form from the fields (`libs/web/src/settings
 | GET | `/api/recordings` | List (name, bytes, scans, seconds, created, the sensors of a session). |
 | GET | `/api/recordings/<name>` | Download (a session folder as `.zip`). DELETE removes it and ends its replays. |
 | POST | `/api/record {"action":"start"\|"stop"}` | Record every live sensor (several: one session folder). |
-| POST | `/api/rig/origin?recording=<name>` `{"sensor"}` | Move the world's origin to that sensor, levelled by its own floor fit (`floor` in its rig entry; without one, by the old world's up): every pose and region follows, the sensors keep their places relative to each other. |
+| POST | `/api/rig/origin?recording=<name>` `{"sensor"}` | Make that sensor's own frame the world (it gets the identity pose): every pose and region follows, the sensors keep their places relative to each other. |
 | GET | `/api/calibration` | The calibration's phase (`idle`, `empty`, `walk`, `done`, `failed`), progress and result. |
 | POST | `/api/calibration {"action":"start"\|"cancel"\|"accept"\|"discard"\|"resolve"\|"origin", "recording"?, "options"?, "region"?, "sensor"?}` | Calibrate the live sensors, or on a recording; accept stores the poses. |
 | GET | `/api/calibration/points` | The result's check: each sensor's empty scene from above in the solved poses (`xy` pairs, m). |

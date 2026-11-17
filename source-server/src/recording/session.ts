@@ -18,7 +18,7 @@ import { Recording, rewriteHeader, round2, type PublishedFrame, type RecordingIn
 import { Recorder, type RecorderState } from "./recorder";
 
 const FILE_RE = /\.tpc(\.zstd)?$/;
-const RIG_KEYS = ["pose", "time_offset_s", "calibrated", "quality", "region", "floor"] as const;   // what a header's rig entry keeps
+const RIG_KEYS = ["pose", "time_offset_s", "calibrated", "quality", "region"] as const;   // what a header's rig entry keeps
 
 /** the files of a session folder (none: not a session) */
 export const sessionFiles = (path: string): string[] => {

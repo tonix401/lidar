@@ -130,8 +130,7 @@ export class Calibration {
     }
   }
 
-  /** move the world to `sensor`: it stands at x = y = yaw = 0 on its own floor's level (its tilt as its floor fit saw it), the
-   *  others keep their place relative to it, and so does the region */
+  /** make `sensor`'s own frame the world (it stands at the identity pose); the others keep their place relative to it, and so does the region */
   setOrigin(sensor: string): void {
     const res = this.calibrator.result, k = this.names.indexOf(sensor);
     if (this.calibrator.phase !== "done" || !res || !this.data || this.solving) throw new ValueError("there is no finished calibration to change");
@@ -142,7 +141,7 @@ export class Calibration {
 
   /** the result's poses in the world of `sensor` (a solve gives the first sensor's); the change of world */
   private placeAt(sensor: string): Pose {
-    const res = this.calibrator.result!, k = this.names.indexOf(sensor), W = worldChange(res[k].pose, res[k].floor);
+    const res = this.calibrator.result!, k = this.names.indexOf(sensor), W = worldChange(res[k].pose);
     res.forEach(r => { r.pose = compose(W, r.pose); });
     this.origin = sensor;
     this.points = topDown(res, this.data!);
