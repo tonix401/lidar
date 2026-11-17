@@ -28,6 +28,7 @@ export class Store {
 export const KEYS = {
   smoothing: "mrs6000.smoothing.v3",       // { mode, manual }
   layerBias: "mrs6000.layerbias.v2",
+  presets: "mrs6000.presets.v1",           // { name: { mode, manual } }: the user's named filter settings
   mount: "mrs6000.mount.v2",
   view: "mrs6000.view",
   fillWalls: "mrs6000.fillWalls",

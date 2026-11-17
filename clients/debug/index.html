@@ -126,6 +126,10 @@
       <option value="medium">medium</option><option value="strong">strong</option>
       <option value="custom" disabled>custom</option>
     </select></div>
+  <div class="row"><label for="userPreset">My presets</label>
+    <span class="presets"><select id="userPreset"></select><button id="presetDelete" hidden>Delete</button></span></div>
+  <div class="row"><input id="presetName" type="text" maxlength="40" placeholder="name for these settings" autocomplete="off">
+    <button id="presetSave">Save</button></div>
   <h3>Filters &amp; smoothing</h3>
   <div id="stages"></div>
   <div id="objStage"></div>

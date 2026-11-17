@@ -41,6 +41,8 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: v
 .row span:last-child { font-variant-numeric: tabular-nums; }
 label { color: var(--muted); }
 select, input[type=range] { width: 150px; }
+.presets { display: flex; gap: 6px; align-items: center; }
+input[type=text] { flex: 1; min-width: 0; background: var(--field); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; }
 #panel > .body { overflow-y: auto; min-height: 0; flex: 1 1 auto; margin: 0 -14px; padding: 0 14px; }   /* the header stays put */
 select, input[type=number] { background: var(--field); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; }
 input[type=number] { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }

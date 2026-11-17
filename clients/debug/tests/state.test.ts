@@ -23,6 +23,16 @@ describe("ConfigState", () => {
     expect(t.cfg.temporal.window).toBe(23);
   });
 
+  it("load replaces mode and settings, from a saved toJSON() or garbage", () => {
+    const a = new ConfigState({ mode: "manual" });
+    a.changeParam("temporal", "window", 23);
+    const b = new ConfigState();
+    b.load(JSON.parse(JSON.stringify(a)));
+    expect([b.mode, b.cfg.temporal.window, b.manual.temporal.window]).toEqual(["manual", 23, 23]);
+    b.load("garbage");
+    expect([b.mode, b.manual]).toEqual(["auto", defaultConfig()]);
+  });
+
   it("manual: every change is remembered; intensity keeps min ≤ max", () => {
     const s = new ConfigState({ mode: "manual" });
     s.changeParam("intensity", "min", 300);

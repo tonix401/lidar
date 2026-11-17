@@ -29,6 +29,8 @@ import { bindInfoIcons } from "./ui/info";
 import { ModeControls } from "./ui/modeControls";
 import { ObjectsPanel } from "./ui/objectsPanel";
 import { PanelChrome } from "./ui/panelChrome";
+import { PresetControls } from "./ui/presetControls";
+import { UserPresets } from "./ui/presets";
 import { Problems } from "./ui/problems";
 import { RecordingPanel } from "./ui/recordingPanel";
 import { SensorsPanel } from "./ui/sensorsPanel";
@@ -73,6 +75,8 @@ export class App {
   private view2d: View2D;
   private stages: StageControls;
   private modes: ModeControls;
+  private presets = new UserPresets(this.store);
+  private presetControls: PresetControls;
   private display: DisplayControls;
   private tabs: ViewTabs;
   private chrome: PanelChrome;
@@ -117,6 +121,14 @@ export class App {
       mode: m => { this.settings.setMode(m); this.configChanged(); },
       preset: name => { this.settings.applyPreset(name); this.resetAll(); this.configChanged(); },
       resetAll: () => { this.settings.resetAll(); this.resetAll(); this.configChanged(); },
+    });
+    this.presetControls = new PresetControls({
+      load: name => { const p = this.presets.get(name); if (p) { this.settings.load(p); this.resetAll(); this.configChanged(); } },
+      save: name => {
+        try { this.presets.save(name, this.settings); } catch (e) { this.problems.flash("action", e); return; }
+        this.syncControls();
+      },
+      remove: name => { this.presets.remove(name); this.syncControls(); },
     });
     this.objectsPanel = new ObjectsPanel($("objInfo"), $("objList"), id => this.select(id));
     this.recording = new RecordingPanel(this.api, {
@@ -242,6 +254,8 @@ export class App {
   private syncControls(): void {
     this.stages.sync(this.cfg, this.settings.auto);
     this.modes.sync(this.settings.mode, matchingPreset(this.cfg), !this.settings.estimate);
+    const now = JSON.stringify(this.settings), names = this.presets.names();
+    this.presetControls.sync(names, names.find(n => JSON.stringify(this.presets.get(n)) === now) ?? "");   // selected while unchanged
     this.display.sync(this.cfg.walls.on);
     this.drawCharts();
   }

@@ -18,7 +18,15 @@ export class ConfigState {
 
   /** `stored`: what toJSON() returned in an earlier session (anything else: defaults) */
   constructor(stored?: unknown) {
+    this.cfg = this.derived();
+    this.load(stored);
+  }
+
+  /** the mode and settings of an earlier toJSON() (a stored session or a saved preset); anything else: defaults */
+  load(stored: unknown): void {
     const s = stored as { mode?: unknown; manual?: unknown } | null | undefined;
+    this.mode = "auto";
+    this.manual = defaultConfig();
     if (s && typeof s === "object") {
       if (s.mode === "auto" || s.mode === "manual") this.mode = s.mode;
       this.manual = mergeConfig(defaultConfig(), s.manual);

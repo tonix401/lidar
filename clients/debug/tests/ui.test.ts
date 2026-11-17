@@ -6,6 +6,7 @@ import { defaultConfig, STAGES } from "@mrs6000/processing/config/config";
 import { Tracker } from "@mrs6000/processing/objects/tracker";
 import { deviceSummary, renderDevice } from "../src/ui/devicePanel";
 import { $ } from "../src/ui/dom";
+import { PresetControls } from "../src/ui/presetControls";
 import { ObjectsPanel } from "../src/ui/objectsPanel";
 import { RecordingPanel } from "../src/ui/recordingPanel";
 import { StageControls } from "../src/ui/stageControls";
@@ -227,4 +228,22 @@ describe("panels", () => {
     expect($("srcLabel").textContent).toBe("offline (no sensor)");
   });
 
+});
+
+describe("preset controls", () => {
+  it("lists the saved names, fills the name on a pick, says Overwrite for a known name, and reports the actions", () => {
+    const load = vi.fn(), save = vi.fn(), remove = vi.fn(), pc = new PresetControls({ load, save, remove });
+    pc.sync(["a", "b"], "");
+    const sel = $<HTMLSelectElement>("userPreset"), name = $<HTMLInputElement>("presetName");
+    expect([...sel.options].map(o => o.value)).toEqual(["", "a", "b"]);
+    expect($("presetDelete").hidden).toBe(true);
+    sel.value = "b"; sel.dispatchEvent(new Event("change"));
+    expect([name.value, load.mock.calls, $("presetSave").textContent, $("presetDelete").hidden]).toEqual(["b", [["b"]], "Overwrite", false]);
+    name.value = "new"; name.dispatchEvent(new Event("input"));
+    expect($("presetSave").textContent).toBe("Save");
+    $("presetSave").click();
+    expect(save).toHaveBeenCalledWith("new");
+    $("presetDelete").click();
+    expect(remove).toHaveBeenCalledWith("b");
+  });
 });
