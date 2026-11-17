@@ -1,29 +1,28 @@
 // Rigid poses of the sensors in the world frame: world point = R · sensor point + t. The sensor frame is
 // the one the pipeline already uses (x forward, y left, z up, mount applied, see pipeline/rays.ts); the
-// world frame is z up with the floor at z = 0 (docs/multisensor.md).
+// world frame is z up with the floor at z = 0 (docs/multisensor.md). Every sensor is mounted level, so a pose
+// is a position and a turn about z only (4 degrees of freedom); R stays a full matrix for the arithmetic.
 import { DEG } from "../core/math";
 
 export interface Pose { R: number[]; t: number[] }        // R: 3×3 row-major, t: x y z (m)
 
-/** the human-readable form: position (m) and Z-Y-X Euler angles (degrees): yaw about z, then pitch
- *  about the new y, then roll about the new x, so R = Rz(yaw) · Ry(pitch) · Rx(roll) */
-export interface PoseParams { x: number; y: number; z: number; yaw: number; pitch: number; roll: number }
+/** the human-readable form: position (m) and yaw about z (degrees), R = Rz(yaw) */
+export interface PoseParams { x: number; y: number; z: number; yaw: number }
 
 export const IDENTITY: Pose = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] };
 
 export function fromParams(p: PoseParams): Pose {
-  const [cy, sy] = [Math.cos(p.yaw * DEG), Math.sin(p.yaw * DEG)];
-  const [cp, sp] = [Math.cos(p.pitch * DEG), Math.sin(p.pitch * DEG)];
-  const [cr, sr] = [Math.cos(p.roll * DEG), Math.sin(p.roll * DEG)];
-  return { R: [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr,
-               sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr,
-               -sp, cp * sr, cp * cr], t: [p.x, p.y, p.z] };
+  const c = Math.cos(p.yaw * DEG), s = Math.sin(p.yaw * DEG);
+  return { R: [c, -s, 0, s, c, 0, 0, 0, 1], t: [p.x, p.y, p.z] };
 }
 
+/** the params of a level pose (its yaw; a tilt, which no pose made by fromParams has, is ignored: see tilt) */
 export function toParams({ R, t }: Pose): PoseParams {
-  const pitch = Math.asin(Math.max(-1, Math.min(1, -R[6])));
-  return { x: t[0], y: t[1], z: t[2], yaw: Math.atan2(R[3], R[0]) / DEG, pitch: pitch / DEG, roll: Math.atan2(R[7], R[8]) / DEG };
+  return { x: t[0], y: t[1], z: t[2], yaw: Math.atan2(R[3], R[0]) / DEG };
 }
+
+/** how far `pose` leans from level (degrees): the angle between its z axis and the world's */
+export const tilt = ({ R }: Pose): number => Math.acos(Math.max(-1, Math.min(1, R[8]))) / DEG;
 
 /** a ∘ b: first b, then a */
 export function compose(a: Pose, b: Pose): Pose {

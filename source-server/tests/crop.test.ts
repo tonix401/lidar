@@ -5,7 +5,7 @@ import { mergeRig } from "../src/rig";
 import type { Header } from "@mrs6000/wire/frame";
 
 const hdr: Header = { layers: 1, beams: 3, start_azimuth_deg: -30, step_deg: 30, elev: [0, 0, 0] };   // at -30°, 0° and 30°
-const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
+const pose = { x: 0, y: 0, z: 0, yaw: 0 };
 const frame = () => ({ t: 1, d: Uint16Array.from([320, 320, 320]), r: Uint16Array.from([5, 6, 7]) });   // 4 m each
 
 describe("Crop", () => {

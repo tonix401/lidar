@@ -36,7 +36,7 @@ The three views are tabs near the top of the panel (keys **1 / 2 / 3**):
 Lines break at the same depth jumps as the surface (Display → Mesh / lines). Seen from above (map), a surface is drawn as its layer lines, and vertical lines become short radial strokes.
 
 **Colour by:** uniform (shaded), RSSI, distance (default), distance to the main sensor, height, layer, noise σ, confidence, area class, radial cell, sensor (several sensors: one colour each).
-- **Distance to the main sensor** is the one to use with several sensors. "Distance" measures from each sensor itself and stretches each sensor's colours over its own scan, so a wall two sensors see gets two clashing colours that shift with every scan. This one measures every point from the primary sensor (the first, unless another row is clicked in Sensors) on one scale for all sensors, which only follows the scene's spread when that changes by more than 10 %. Measured on the simulated rig: the same spot seen by two sensors differs by at most 0.03 in a colour channel, against 0.94 with "Distance" (`tests/geometry.test.ts`). With one sensor it is the same as "Distance". The legend under the selector shows the range; area class and radial cell show counts instead.
+- **Distance to the main sensor** is the one to use with several sensors. "Distance" measures from each sensor itself and stretches each sensor's colours over its own scan, so a wall two sensors see gets two clashing colours that shift with every scan. This one measures every point from the primary sensor (the rig's main sensor, unless another row is clicked in Sensors) on one scale for all sensors, which only follows the scene's spread when that changes by more than 10 %. Measured on the simulated rig: the same spot seen by two sensors differs by at most 0.03 in a colour channel, against 0.94 with "Distance" (`tests/geometry.test.ts`). With one sensor it is the same as "Distance". The legend under the selector shows the range; area class and radial cell show counts instead.
 
 ## Panel
 
@@ -55,7 +55,7 @@ From top to bottom:
    - Clicking the row plays it too.
    - Hovering a recording shows its size, scan count and date; recording, downloading and deleting are on the source server's page (the link next to the source).
    - The playing recording has a blue left edge; one being recorded has a red dot.
-4. **Sensors** (only with several sensors): a row per sensor, calibrated or not (calibrating is on the source server's page: [multisensor.md](multisensor.md#calibration-where-each-sensor-stands)). Clicking a row makes it the primary sensor, which the range image, the map and the statistics show.
+4. **Sensors** (only with several sensors): a row per sensor, calibrated or not (calibrating is on the source server's page: [multisensor.md](multisensor.md#calibration-where-each-sensor-stands)). Clicking a row makes it the primary sensor, which the range image, the map and the statistics show. Until then the primary sensor is the rig's main one (the source server's Main column).
 5. **View tabs**, with **Pause** for the live view. Pause is hidden during a replay, where the replay bar has play/pause.
 6. **Display**: visual settings only, and only those that change something in the current view (below).
 7. **Objects**: the object list (click to select), with a count badge in the heading.

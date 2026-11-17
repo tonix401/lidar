@@ -17,6 +17,8 @@ import { openRecording, Session, SessionRecorder, storeSessionRig } from "./reco
 import { recordingPath } from "./recording/catalog";
 import { Replay, type ReplayEvents, type ReplayInfo } from "./replay";
 import { mergeRig, rigFor, type Rig } from "./rig";
+import { mainOf } from "@mrs6000/wire/rig";
+import type { PoseParams } from "@mrs6000/processing/fusion/pose";
 import type { Store } from "./store";
 
 /** what consumers are told about (ws.ts) */
@@ -152,12 +154,12 @@ export class Hub {
   rigVersionOf(source: string): number { return source === "live" ? this.rigVersion : this.replay(source).rigVersion; }
 
   /** store poses: the live rig, or a recording's (in its files' headers; not while it is being recorded) */
-  async setRig(update: unknown, recording: string | null = null): Promise<Rig> {
+  async setRig(update: unknown, recording: string | null = null, withMain = false): Promise<Rig> {
     if (recording === null) {
       const names = new Set(this.store.data.sensors.map(s => s.name)), items = (update as { sensors?: unknown })?.sensors;
       if (Array.isArray(items) && items.some(u => !u || typeof u !== "object" || !names.has((u as { name?: string }).name ?? "")))
         throw new ValueError(`unknown sensor (the registered ones: ${[...names].sort().join(", ")})`);
-      this.store.rig = mergeRig(this.store.rig, update);
+      this.store.rig = mergeRig(this.store.rig, update, withMain);
       this.rigChanged("live");
       return rigFor(this.store.rig, this.store.data.sensors.map(s => s.name));
     }
@@ -165,7 +167,7 @@ export class Hub {
     if (this.recording(path)) throw new ValueError("stop the recording first");
     const session = (() => { try { return new Session(path); } catch { throw new ValueError("a single-sensor recording has no rig to store"); } })();
     let rig: Rig;
-    try { rig = mergeRig(session.rig, update); } finally { session.close(); }
+    try { rig = mergeRig(session.rig, update, withMain); } finally { session.close(); }
     await storeSessionRig(path, rig);
     for (const r of this.replays.values())
       if (resolve(r.path) === resolve(path) && r.rec instanceof Session) { r.rec.rig = rig; this.rigChanged(r.id); }
@@ -194,24 +196,39 @@ export class Hub {
       const rec = openRecording(path); names = [...rec.sensors]; rec.close();
     }
     if (names.length < 2) throw new ValueError("calibration needs at least two sensors");
-    this.calibration = new Calibration(recording === null ? "live" : basename(path!), names, this.mounts(names), o, path);
+    const main = mainOf(recording === null ? this.store.rig : this.recordingRig(recording));
+    this.calibration = new Calibration(recording === null ? "live" : basename(path!), names, this.mounts(names), o, path, true, main);
     return this.calibration;
   }
 
-  /** make `sensor` the world's origin in the finished calibration */
-  setCalibrationOrigin(sensor: string): Calibration {
+  /** the finished calibration, to change */
+  private calibrationResult(): Calibration {
     if (!this.calibration) throw new ValueError("no calibration to change");
-    this.calibration.setOrigin(sensor);
     return this.calibration;
   }
 
-  /** move the stored rig's world to `sensor` (the live rig, or a recording's): every pose, and each sensor's region, follows;
-   *  the sensors keep their places relative to each other */
+  /** make `sensor` the main one in the finished calibration */
+  setCalibrationOrigin(sensor: string): Calibration { this.calibrationResult().setOrigin(sensor); return this.calibration!; }
+
+  /** set a sensor's pose by hand in the finished calibration */
+  adjustCalibration(sensor: string, pose: PoseParams): Calibration { this.calibrationResult().adjust(sensor, pose); return this.calibration!; }
+
+  /** the finished calibration's solved poses again */
+  resetCalibration(): Calibration { this.calibrationResult().reset(); return this.calibration!; }
+
+  /** match the scene again from the finished calibration's current poses */
+  async refineCalibration(): Promise<Calibration> { await this.calibrationResult().refine(); return this.calibration!; }
+
+  /** make `sensor` the main one of the stored rig (the live rig, or a recording's): the world moves to the floor below
+   *  it, and every pose and each sensor's region follows; the sensors keep their places relative to each other. A rig
+   *  without poses only changes which sensor is the main one. */
   async setOrigin(sensor: string, recording: string | null = null): Promise<Rig> {
-    const rig = recording === null ? this.rig("live") : this.recordingRig(recording);
-    let moved;
-    try { moved = moveRigOrigin(rig.sensors as PlacedSensor[], sensor); } catch (e) { throw new ValueError(e instanceof Error ? e.message : String(e)); }
-    return this.setRig({ sensors: moved }, recording);
+    const rig = recording === null ? rigFor(this.store.rig, this.store.data.sensors.map(s => s.name)) : this.recordingRig(recording);
+    if (!rig.sensors.some(s => s.name === sensor)) throw new ValueError(`unknown sensor ${sensor}`);
+    let moved: object[] = [];
+    if (rig.sensors.some(s => s.pose))
+      try { moved = moveRigOrigin(rig.sensors as PlacedSensor[], sensor); } catch (e) { throw new ValueError(e instanceof Error ? e.message : String(e)); }
+    return this.setRig({ sensors: [...moved, { name: sensor, main: true }] }, recording, true);
   }
 
   /** solve the finished calibration again inside `region` (null: everywhere) */
@@ -227,7 +244,7 @@ export class Hub {
     if (!c?.result) throw new ValueError("no calibration result to accept");
     const target = c.target === "live" ? null : c.target, sensors = c.entries();
     this.stopCalibration();
-    return this.setRig({ sensors }, target);
+    return this.setRig({ sensors }, target, true);
   }
 
   stopCalibration(): void { this.calibration?.close(); this.calibration = null; }

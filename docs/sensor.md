@@ -51,7 +51,7 @@ The dimensions come from the MRS6000 operating instructions, figure 20 (Maßzeic
 
 ## Several sensors
 
-See [multisensor.md](multisensor.md): each needs its own IP, should stand within 10° of level and see some floor. Cross-talk between sensors facing each other has not been measured yet.
+See [multisensor.md](multisensor.md): each needs its own IP, must be mounted level and should see some floor. Cross-talk between sensors facing each other has not been measured yet.
 
 ## Quirks
 

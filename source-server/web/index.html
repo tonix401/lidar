@@ -15,14 +15,16 @@
 <main>
   <section>
     <h2>Sensors</h2>
-    <div class="scroll"><table id="sensors"><thead><tr><th>Name</th><th>Address</th><th>Mount</th><th>Stream</th><th>Clock</th><th>Device</th><th>Pose</th><th></th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll"><table id="sensors"><thead><tr><th>Name</th><th title="the world is the floor below the main sensor: it stands at x = y = 0, facing x">Main</th><th>Address</th><th>Mount</th><th>Stream</th><th>Clock</th><th>Device</th><th>Pose (x, y, height, yaw)</th><th></th></tr></thead><tbody></tbody></table></div>
     <form id="addSensor" class="inline">
       <input name="name" placeholder="name" required pattern="[A-Za-z0-9_\-]{1,32}" title="letters, digits, _ and -, at most 32">
       <input name="ip" placeholder="address, e.g. 192.168.178.201" required>
       <select name="mount"><option value="auto">mount: from the device</option><option value="upright">upright</option><option value="upsidedown">upside down</option></select>
       <button type="submit">Add sensor</button>
     </form>
-    <p class="note">The live sensors restart when this list changes (not while recording).</p>
+    <p class="note">The live sensors restart when this list changes (not while recording). The main sensor defines the world: the floor
+      below it is the origin, x its forward direction. Choosing another one moves every pose with it, nothing is measured again;
+      it is also the processing servers' and the debug page's first sensor.</p>
   </section>
 
   <section>
@@ -34,18 +36,28 @@
   <section>
     <h2>Calibration</h2>
     <p class="note">Finds where the sensors stand: first the empty scene (nobody in it), then one person walks a wide loop
-      through the area every sensor sees, for about 30 s. Each sensor's floor gives its tilt and height, the walk its position
-      and turn, and the walls seen by several sensors refine it to about a centimetre. Mount every sensor within 10° of level,
-      seeing some floor.</p>
+      (at least 2 m across) through the area every sensor sees, for about 30 s. Every sensor must be mounted level. Each sensor's
+      floor gives its height, the walk its position and turn (every pair of sensors that saw the walker together counts), and
+      the walls seen by several sensors refine it to about a centimetre. A sensor that sees no floor gets its height from the
+      walker; you can also type it in.</p>
     <div class="row">
       <select id="calTarget"></select>
       <button id="calStart">Calibrate</button><button id="calCancel" hidden>Cancel</button>
     </div>
     <div id="calInfo" class="note"></div>
     <div id="calResult" hidden>
-      <div class="scroll"><table id="calTable"><thead><tr><th>Sensor</th><th>Pose</th><th>Quality</th><th>Problems</th></tr></thead><tbody></tbody></table></div>
-      <p class="note">From above, every sensor's empty scene in the solved poses: walls seen by several sensors should lie on top of each other.</p>
-      <canvas id="calView" width="900" height="520"></canvas>
+      <div class="scroll"><table id="calTable"><thead><tr><th>Sensor</th><th>Main</th><th>Pose (x, y, height, yaw)</th><th>Quality</th><th>Problems</th></tr></thead><tbody></tbody></table></div>
+      <p class="note">From above, every sensor's empty scene in the solved poses: walls seen by several sensors should lie on top of each other.
+        To correct a sensor by hand, drag its dot (move) or the tip of its arrow (turn), or click it and use the arrow keys
+        (1 cm; with Shift 10 cm) and [ ] (0.1°; with Shift 1°). The numbers in the table nudge the same way.</p>
+      <canvas id="calView" width="900" height="520" tabindex="0"></canvas>
+      <p class="note">From the side (x across, height up): every sensor's floor should lie on the line at 0. Drag a sensor up or down to set its height.</p>
+      <canvas id="calSide" width="900" height="220"></canvas>
+      <div class="row">
+        <button id="calRefine" title="match the static scene again, starting from the poses as they are now">Refine from here</button>
+        <button id="calReset" title="the poses as the last solve found them">Reset to solved</button>
+        <span id="calAdjustInfo" class="note"></span>
+      </div>
       <p class="note" id="calRegionNote">Walls or things outside the area you care about can be left out: draw its outline on the view (click the corners,
         click the first one to close, drag a corner to move it), then solve again inside it. Everything outside is thrown away.</p>
       <div class="row">

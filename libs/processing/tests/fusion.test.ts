@@ -1,26 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { DEG } from "../src/core/math";
-import { apply, applyAll, compose, fromParams, fromRotationVector, invert, poseError, toParams } from "../src/fusion/pose";
+import { apply, applyAll, compose, fromParams, fromRotationVector, invert, poseError, tilt, toParams } from "../src/fusion/pose";
 import { castScan, RIG3, ROOM, simGeometry } from "../sim/rig";
 import { elevations } from "../sim/scene";
 
 describe("pose", () => {
-  const p = { x: 1.5, y: -2, z: 0.9, yaw: 123, pitch: -7, roll: 4 };
+  const p = { x: 1.5, y: -2, z: 0.9, yaw: 123 };
 
   it("params round-trip", () => {
     const q = toParams(fromParams(p));
     for (const k of Object.keys(p) as (keyof typeof p)[]) expect(q[k]).toBeCloseTo(p[k], 9);
   });
 
-  it("R is a rotation: Rz(yaw) Ry(pitch) Rx(roll)", () => {
-    const { R } = fromParams({ x: 0, y: 0, z: 0, yaw: 90, pitch: 0, roll: 0 });
+  it("R is a turn about z: level", () => {
+    const { R } = fromParams({ x: 0, y: 0, z: 0, yaw: 90 });
     expect(apply({ R, t: [0, 0, 0] }, [1, 0, 0]).map(v => +v.toFixed(12))).toEqual([0, 1, 0]);   // forward → left
-    const pitched = fromParams({ x: 0, y: 0, z: 0, yaw: 0, pitch: 10, roll: 0 });
-    expect(apply(pitched, [1, 0, 0])[2]).toBeCloseTo(-Math.sin(10 * DEG), 12);                     // positive pitch tilts the nose down
+    expect(tilt(fromParams(p))).toBe(0);
+    expect(tilt(fromRotationVector(0, 3 * DEG, 0))).toBeCloseTo(3, 9);
   });
 
   it("compose and invert", () => {
-    const a = fromParams(p), b = fromParams({ x: -0.3, y: 0.2, z: 0.1, yaw: -40, pitch: 3, roll: -2 });
+    const a = fromParams(p), b = fromParams({ x: -0.3, y: 0.2, z: 0.1, yaw: -40 });
     const v = [0.7, -1.1, 2.3];
     expect(apply(compose(a, b), v)).toEqual(apply(a, apply(b, v)).map(x => expect.closeTo(x, 12)));
     expect(apply(compose(invert(a), a), v)).toEqual(v.map(x => expect.closeTo(x, 12)));

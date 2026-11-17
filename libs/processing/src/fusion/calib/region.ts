@@ -42,7 +42,7 @@ export function checkRegion(poly: unknown): Region {
 
 export interface CropInput {
   data: { L: number; B: number; rayX: Float32Array; rayY: Float32Array; rayZ: Float32Array; bg: Float32Array };
-  walk: { t: number; x: number; y: number; z: number }[];
+  walk: { t: number; x: number; y: number; z: number; z0?: number }[];
   pose: Pose;                                       // sensor → world
 }
 

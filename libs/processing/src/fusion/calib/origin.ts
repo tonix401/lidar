@@ -1,13 +1,15 @@
-// Which sensor is the world's origin. A calibration makes the first sensor's levelled frame the world (z up, origin on
-// the floor below it, x its forward direction), but any placed sensor can be: the world becomes that sensor's own frame
-// (x forward, y left, z up the way it is mounted, origin at the sensor), so it stands at the identity pose and all
-// points are in its frame. The world is only moved, rigidly, so every sensor keeps its place relative to the
-// others and nothing needs measuring again.
+// Which sensor is the main one: the world is the floor below it (z up, origin on the floor under it, x its forward
+// direction). Every sensor is level, so moving the world to another sensor is a turn about z and a shift along the
+// floor: heights don't change, and the floor stays at z = 0. The world is only moved, rigidly, so every sensor
+// keeps its place relative to the others and nothing needs measuring again.
 import { apply, compose, fromParams, invert, toParams, type Pose, type PoseParams } from "../pose";
 import type { Region } from "./region";
 
-/** old world → new world, for the sensor at `pose` becoming the origin */
-export const worldChange = (pose: Pose): Pose => invert(pose);
+/** old world → new world, for the sensor at `pose` becoming the main one: the inverse of its place on the floor */
+export function worldChange(pose: Pose): Pose {
+  const p = toParams(pose);
+  return invert(fromParams({ ...p, z: 0 }));
+}
 
 /** the poses in the new world */
 export function moveOrigin(poses: Pose[], origin: number): Pose[] {
@@ -31,7 +33,7 @@ export function moveRigOrigin(sensors: PlacedSensor[], name: string): { name: st
   const poses = placed.map(s => fromParams(s.pose)), W = worldChange(poses[k]), r = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d + 0;
   return placed.map((s, i) => {
     const p = toParams(compose(W, poses[i]));
-    return { name: s.name, pose: { x: r(p.x, 4), y: r(p.y, 4), z: r(p.z, 4), yaw: r(p.yaw, 3), pitch: r(p.pitch, 3), roll: r(p.roll, 3) },
+    return { name: s.name, pose: { x: r(p.x, 4), y: r(p.y, 4), z: r(p.z, 4), yaw: r(p.yaw, 3) },
              ...(s.region ? { region: moveRegion(s.region, W).map(([x, y]) => [r(x, 4), r(y, 4)] as [number, number]) } : {}) };
   });
 }

@@ -22,7 +22,6 @@ import type { SensorSpec } from "./rig";
 import { applySettings, recordingsDir } from "./settings";
 import { statusLoop } from "./status";
 import { Store, type SensorEntry } from "./store";
-import { DEFAULT_IP } from "./variables";
 import { Consumers, type Conn } from "./ws";
 
 const HERE = resolve(dirname(fileURLToPath(import.meta.url)), ".."), REPO = resolve(HERE, "..");
@@ -43,10 +42,9 @@ export function parse(argv: string[]): Args {
   return { db: resolve(v.db!), offline: !!v.offline };
 }
 
-/** the live sensors: the registry's (with an address, not disabled), else one at the default address */
+/** the live sensors: the registry's with an address, not disabled (none: no live sensors until one is added on the page) */
 export function sensorSpecs(registry: SensorEntry[]): SensorSpec[] {
-  const inRegistry = registry.filter(s => s.ip && s.enabled !== false).map(s => ({ name: s.name, ip: s.ip! }));
-  return inRegistry.length ? inRegistry : [{ name: "sensor", ip: DEFAULT_IP }];
+  return registry.filter(s => s.ip && s.enabled !== false).map(s => ({ name: s.name, ip: s.ip! }));
 }
 
 export async function main(argv = Bun.argv.slice(2)): Promise<void> {

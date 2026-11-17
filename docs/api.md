@@ -27,17 +27,17 @@ one). The pages draw their settings form from the fields (`libs/web/src/settings
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/state` | Live sensors (`name`, `ip`, `error`, `rate`, `clock`, `device`, `upside_down`), recording progress, replays (`id`, `recording`, `mode`, `owner`, `consumers`, position), the calibration's target. |
-| GET | `/api/status?sensor=<name>` | A live sensor's REST device values. |
-| GET | `/api/registry/sensors` | The configured sensors (`name`, `ip`, `enabled`, `mount`, and their pose). POST adds one; PUT/DELETE `/api/registry/sensors/<name>` change or remove one. The live sensors restart (refused while recording). |
+| GET | `/api/status?sensor=<name>` | A live sensor's REST device values (default: the main sensor). |
+| GET | `/api/registry/sensors` | The configured sensors (`name`, `main`, `ip`, `enabled`, `mount`, and their pose). Exactly one is `main`: the world is the floor below it. POST adds one; PUT/DELETE `/api/registry/sensors/<name>` change or remove one: PUT `{"ip"?, "enabled"?, "mount"?, "rename"?}` (a renamed sensor keeps its pose), or `{"main": true}` (as `POST /api/rig/origin`). The live sensors restart (refused while recording). Removing the main sensor makes the first one main, and moves the world to it. |
 | GET | `/api/rig?recording=<name>` | The poses: the live rig, or a recording's (from its files' headers). |
-| PUT | `/api/rig?recording=<name>` `{"sensors":[{"name", "pose":{x,y,z,yaw,pitch,roll}, "time_offset_s", "calibrated", "quality"}]}` | Store poses (a single-sensor recording has no rig). Every processing server watching it gets the new rig. |
+| PUT | `/api/rig?recording=<name>` `{"sensors":[{"name", "pose":{x,y,z,yaw}, "time_offset_s", "calibrated", "quality"}]}` | Store poses (a single-sensor recording has no rig). Every sensor is level: a `pitch` or `roll` is accepted only when it is 0 (and dropped). Every processing server watching it gets the new rig. |
 | GET | `/api/recordings` | List (name, bytes, scans, seconds, created, the sensors of a session). |
 | GET | `/api/recordings/<name>` | Download (a session folder as `.zip`). DELETE removes it and ends its replays. |
 | POST | `/api/record {"action":"start"\|"stop"}` | Record every live sensor (several: one session folder). |
-| POST | `/api/rig/origin?recording=<name>` `{"sensor"}` | Make that sensor's own frame the world (it gets the identity pose): every pose and region follows, the sensors keep their places relative to each other. |
+| POST | `/api/rig/origin?recording=<name>` `{"sensor"}` | Make that sensor the main one: the world moves to the floor below it (it gets x = y = yaw = 0, keeping its height); every pose and region follows, the sensors keep their places relative to each other. A rig without poses only changes which one is main. |
 | GET | `/api/calibration` | The calibration's phase (`idle`, `empty`, `walk`, `done`, `failed`), progress and result. |
-| POST | `/api/calibration {"action":"start"\|"cancel"\|"accept"\|"discard"\|"resolve"\|"origin", "recording"?, "options"?, "region"?, "sensor"?}` | Calibrate the live sensors, or on a recording; accept stores the poses. |
-| GET | `/api/calibration/points` | The result's check: each sensor's empty scene from above in the solved poses (`xy` pairs, m). |
+| POST | `/api/calibration {"action":"start"\|"cancel"\|"accept"\|"discard"\|"resolve"\|"origin"\|"adjust"\|"reset"\|"refine", "recording"?, "options"?, "region"?, "sensor"?, "pose"?}` | Calibrate the live sensors, or on a recording (the main sensor's floor is the world); accept stores the poses and which sensor is main. Before accepting: `origin` picks another main sensor, `adjust {sensor, pose: {x,y,z,yaw}}` sets a pose by hand (the main sensor: only its height, which then counts as measured), `refine` matches the scene again from the poses as they are, `reset` goes back to the solve. Each result carries `manual` and its quality's `height` (`floor`, `given`, `walk`, `feet`, `unknown`). |
+| GET | `/api/calibration/points` | The result's check: each sensor's empty scene in the solved poses (`xy` pairs and `z`, m). |
 | GET | `/api/consumers` | The connected processing servers (name, the source they watch, `owns`: started that replay, frames sent and dropped). |
 | GET | `/api/registry/consumers` | Registered processing servers with their tokens (admin); POST `{"name"}` adds one, DELETE `/api/registry/consumers/<name>`. |
 | GET/PUT | `/api/settings` | Address, port, recordings folder (changed: from now on; refused while recording), `open` (unregistered processing servers may connect), admin token, origins. |

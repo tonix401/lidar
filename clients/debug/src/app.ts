@@ -22,6 +22,7 @@ import { buildGeometry, createGeometry, sensorColor, typicalRange, type Geometry
 import { Scene3D } from "./render/scene3d";
 import { View2D, type View2DData } from "./render/view2d";
 import { SensorView } from "./sensorView";
+import { mainOf } from "@mrs6000/wire/rig";
 import { drawHistogram, drawLayerBias } from "./ui/charts";
 import { DisplayControls } from "./ui/displayControls";
 import { $ } from "./ui/dom";
@@ -56,6 +57,7 @@ export class App {
   readonly ui: UiSettings;
   sensors: SensorView[] = [];
   primaryIdx = 0;
+  private primaryPicked = false;           // the user picked the primary sensor: the rig's main one no longer decides
   readonly fusion = new ObjectFusion();
   selected = 0;
   private started = false;
@@ -136,7 +138,7 @@ export class App {
     });
     new ServerPanel(this.api, this.store, !import.meta.env.DEV);   // the Vite dev page stays: its proxy points at the old address
     this.sensorsPanel = new SensorsPanel({
-      primary: k => { this.primaryIdx = k; this.mainRange = null; this.display.setLayers(this.primary.processor.grid?.L ?? 24); this.rebuild(false); this.renderSensors(true); },
+      primary: k => { this.primaryPicked = true; this.setPrimary(k); },
       visible: (k, on) => { const v = this.sensors[k]; if (v) { v.visible = on; this.scene.setVisible(k, on); } },
     });
     this.display = new DisplayControls(this.ui, this.store, {
@@ -210,11 +212,16 @@ export class App {
     if (this.started) for (const v of this.sensors) v.start();
   }
 
-  /** the rig's poses (the source server's live rig, or the recording's) */
+  private setPrimary(k: number): void {
+    this.primaryIdx = k; this.mainRange = null; this.display.setLayers(this.primary.processor.grid?.L ?? 24); this.rebuild(false); this.renderSensors(true);
+  }
+
+  /** the rig's poses (the source server's live rig, or the recording's); its main sensor is the primary one until the user picks another */
   private async loadRig(): Promise<void> {
     try {
-      const rig = await this.api.rig();
+      const rig = await this.api.rig(), main = this.sensors.findIndex(v => v.name === mainOf(rig));
       for (const v of this.sensors) v.setRig(rig.sensors.find(r => r.name === v.name));
+      if (!this.primaryPicked && main >= 0 && main !== this.primaryIdx) this.setPrimary(main);
       this.sensors.forEach((v, k) => this.scene.setPose(k, v.pose));
       this.fusion.reset();                                      // tracks fused with the old poses
       this.mergeAt = 0;                                         // shared surfaces too

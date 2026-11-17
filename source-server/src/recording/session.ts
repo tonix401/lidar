@@ -13,12 +13,13 @@ import { describeError, ValueError } from "@mrs6000/server-common/errors";
 import { stamp } from "@mrs6000/server-common/log";
 import type { Scan } from "../model";
 import { type Rig, type RigSensor } from "@mrs6000/wire/rig";
+import { levelEntry } from "../rig";
 import type { Frame, Header, RecordingMeta } from "./format";
 import { Recording, rewriteHeader, round2, type PublishedFrame, type RecordingInfo } from "./reader";
 import { Recorder, type RecorderState } from "./recorder";
 
 const FILE_RE = /\.tpc(\.zstd)?$/;
-const RIG_KEYS = ["pose", "time_offset_s", "calibrated", "quality", "region"] as const;   // what a header's rig entry keeps
+const RIG_KEYS = ["main", "pose", "time_offset_s", "calibrated", "quality", "region"] as const;   // what a header's rig entry keeps
 
 /** the files of a session folder (none: not a session) */
 export const sessionFiles = (path: string): string[] => {
@@ -64,7 +65,7 @@ export class Session {
   }
 
   /** the poses the session was recorded or calibrated with */
-  get rig(): Rig { return { sensors: this.recs.map((r, i) => ({ name: this.names[i], ...r.meta.rig })) }; }
+  get rig(): Rig { return { sensors: this.recs.map((r, i) => levelEntry({ name: this.names[i], ...r.meta.rig })) }; }
   set rig(rig: Rig) {
     const byName = new Map(rig.sensors.map(s => [s.name, s]));
     this.recs.forEach((r, i) => { r.meta = { ...r.meta, rig: rigEntry(byName.get(this.names[i])) }; });

@@ -2,15 +2,16 @@
 // through the shared area, then the solve) on the sensors' processed scans. Its own SensorSet runs only while
 // calibrating: fed by the live frames, or by a recording from its first frame as fast as the workers go. The
 // cross-check is off (with unknown poses the sensors would "see through" each other). The result is kept until
-// accepted (stored as the rig) or discarded; `points` is every sensor's empty scene seen from above in the solved
-// poses, for checking the result by eye.
+// accepted (stored as the rig) or discarded; `points` is every sensor's empty scene in the solved poses, for checking
+// the result by eye. Before accepting, a pose can be set by hand (`adjust`, from the page's views) and the scene
+// matched again from there (`refine`). The world is the floor below the main sensor (`origin`).
 import { defaultConfig } from "@mrs6000/processing/config/config";
 import { gridCloud, transformCloud } from "@mrs6000/processing/fusion/calib/icp";
 import { Calibrator, type CalibratorOptions, type Processed } from "@mrs6000/processing/fusion/calib/calibrator";
 import { moveRegion, worldChange } from "@mrs6000/processing/fusion/calib/origin";
 import { cropToRegion, type Region } from "@mrs6000/processing/fusion/calib/region";
-import { rigEntry, type CalibInput, type SensorCalibration } from "@mrs6000/processing/fusion/calib/rig";
-import { compose, toParams, type Pose } from "@mrs6000/processing/fusion/pose";
+import { rigEntry, type CalibInput, type CalibOptions, type SensorCalibration } from "@mrs6000/processing/fusion/calib/rig";
+import { compose, fromParams, toParams, type Pose, type PoseParams } from "@mrs6000/processing/fusion/pose";
 import { describeError, ValueError } from "@mrs6000/server-common/errors";
 import type { CalibData, MountSetting, SensorFrame, SensorOutput } from "@mrs6000/server-common/sensor/core";
 import { SensorSet } from "@mrs6000/server-common/sensorSet";
@@ -20,11 +21,11 @@ export interface CalibrationState {
   target: string;                            // "live" or a recording's name
   origin: string; region: Region | null; cut: number;        // the region the solve was limited to, and how many beams and walk samples it left out
   phase: Calibrator["phase"]; seconds: number; samples: number[]; ready: boolean; solving: boolean; error: string;
-  result: { name: string; pose: ReturnType<typeof toParams>; timeOffset: number; problems: string[]; quality: unknown }[] | null;
+  result: { name: string; pose: PoseParams; timeOffset: number; problems: string[]; quality: unknown; manual: boolean }[] | null;
 }
 
-/** each sensor's empty scene in the world, from above: x, y pairs (m), at most POINTS per sensor */
-export interface CalibrationPoints { sensors: { name: string; pose: ReturnType<typeof toParams>; xy: number[] }[] }
+/** each sensor's empty scene in the world: x, y pairs and the heights (m), at most POINTS per sensor */
+export interface CalibrationPoints { sensors: { name: string; pose: PoseParams; xy: number[]; z: number[] }[] }
 
 const EMPTY = new Float32Array(0), POINTS = 4000;
 
@@ -34,7 +35,10 @@ export class Calibration {
   points: CalibrationPoints | null = null;
   region: Region | null = null;
   cut = 0;
-  origin: string;                              // the sensor that is the world's origin: the first, until changed
+  origin: string;                              // the main sensor: the world is the floor below it
+  readonly heights = new Map<string, number>();  // heights set by hand: used by every later solve
+  private manual = new Set<string>();           // sensors whose pose was set by hand since the last solve
+  private solved: Pose[] = [];                  // the last solve's poses, for "reset"
   private data: CalibData[] | null = null;      // what the first solve used, uncropped: every re-solve starts from it
   private views: Processed[];
   private solving = false;
@@ -43,9 +47,9 @@ export class Calibration {
 
   /** `recording`: calibrate on that recording (its path) instead of the live frames pushed with push() */
   constructor(readonly target: string, readonly names: string[], mounts: MountSetting[], o: CalibratorOptions = {}, recording: string | null = null,
-              threaded = true) {
+              threaded = true, origin = names[0]) {
     this.calibrator = new Calibrator(names, o);
-    this.origin = names[0];
+    this.origin = names.includes(origin) ? origin : names[0];
     this.views = names.map(() => ({ grid: null, objects: { confirmed: [], bgModel: { ready: false, bg: EMPTY } } }));
     this.busy = names.map(() => 0);
     this.set = new SensorSet(names.map((name, k) => ({ name, mount: mounts[k] })), defaultConfig(), {
@@ -59,7 +63,13 @@ export class Calibration {
   get result(): SensorCalibration[] | null { return this.calibrator.result; }
 
   /** the rig entries to store: the poses, and the region drawn on them (null: none, which also clears an earlier one: its world is gone) */
-  entries(): Record<string, unknown>[] { return (this.calibrator.result ?? []).map(r => ({ ...rigEntry(r), region: this.region })); }
+  entries(): Record<string, unknown>[] {
+    return (this.calibrator.result ?? []).map(r => {
+      const e = rigEntry(r) as { quality: Record<string, unknown> };
+      if (this.manual.has(r.name)) e.quality = { ...e.quality, manual: true };
+      return { ...e, main: r.name === this.origin, region: this.region };
+    });
+  }
 
   /** a live frame of sensor `name` */
   push(name: string, f: SensorFrame): void {
@@ -73,7 +83,7 @@ export class Calibration {
     const c = this.calibrator, p = c.progress();
     return { target: this.target, origin: this.origin, region: this.region, cut: this.cut, phase: c.phase, seconds: Math.round(p.seconds * 10) / 10, samples: p.samples, ready: p.ready, solving: this.solving, error: c.error,
              result: c.result?.map(r => ({ name: r.name, pose: toParams(r.pose), timeOffset: r.timeOffset, problems: r.problems,
-                                           quality: (rigEntry(r) as { quality?: unknown }).quality ?? null })) ?? null };
+                                           quality: (rigEntry(r) as { quality?: unknown }).quality ?? null, manual: this.manual.has(r.name) })) ?? null };
   }
 
   close(): void {
@@ -130,22 +140,58 @@ export class Calibration {
     }
   }
 
-  /** make `sensor`'s own frame the world (it stands at the identity pose); the others keep their place relative to it, and so does the region */
-  setOrigin(sensor: string): void {
-    const res = this.calibrator.result, k = this.names.indexOf(sensor);
+  private finished(): SensorCalibration[] {
+    const res = this.calibrator.result;
     if (this.calibrator.phase !== "done" || !res || !this.data || this.solving) throw new ValueError("there is no finished calibration to change");
+    return res;
+  }
+
+  private index(sensor: string): number {
+    const k = this.names.indexOf(sensor);
     if (k < 0) throw new ValueError(`unknown sensor ${sensor}`);
-    const W = this.placeAt(sensor);
+    return k;
+  }
+
+  /** make `sensor` the main one: the world moves to the floor below it; the others keep their place relative to it, and so does the region */
+  setOrigin(sensor: string): void {
+    const res = this.finished(), W = worldChange(res[this.index(sensor)].pose);
+    res.forEach(r => { r.pose = compose(W, r.pose); });
+    this.solved = this.solved.map(p => compose(W, p));
+    this.origin = sensor;
+    this.points = topDown(res, this.data!);
     if (this.region) this.region = moveRegion(this.region, W);
   }
 
-  /** the result's poses in the world of `sensor` (a solve gives the first sensor's); the change of world */
-  private placeAt(sensor: string): Pose {
-    const res = this.calibrator.result!, k = this.names.indexOf(sensor), W = worldChange(res[k].pose);
-    res.forEach(r => { r.pose = compose(W, r.pose); });
-    this.origin = sensor;
+  /** set a sensor's pose by hand. The main sensor stays above the world's origin, facing x: only its height changes.
+   *  A height changed by hand counts as measured for every later solve. */
+  adjust(sensor: string, pose: PoseParams): void {
+    const res = this.finished(), k = this.index(sensor), was = toParams(res[k].pose);
+    for (const key of ["x", "y", "z", "yaw"] as const)
+      if (typeof pose?.[key] !== "number" || !Number.isFinite(pose[key]) || Math.abs(pose[key]) > 1e4) throw new ValueError(`pose ${key}: expected a number`);
+    const now = sensor === this.origin ? { ...was, z: pose.z } : { x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw };
+    if (Math.abs(now.z - was.z) > 1e-6) this.heights.set(sensor, now.z);
+    res[k].pose = fromParams(now);
+    this.manual.add(sensor);
     this.points = topDown(res, this.data!);
-    return W;
+  }
+
+  /** the last solve's poses again */
+  reset(): void {
+    const res = this.finished();
+    res.forEach((r, k) => { r.pose = this.solved[k]; });
+    this.manual.clear();
+    this.points = topDown(res, this.data!);
+  }
+
+  /** match the static scene again, from the poses as they are now (after `adjust`) */
+  async refine(): Promise<void> {
+    const res = this.finished();
+    this.solving = true;
+    try {
+      await this.run(this.data!, this.calibrator.walk, res);
+    } finally {
+      this.solving = false;
+    }
   }
 
   /** solve again with only what lies inside `region` (world x, y pairs, in the poses of the current result), or with
@@ -162,23 +208,25 @@ export class Calibration {
       }
       await this.run(data, walks);
       this.region = region; this.cut = cut;
-      if (this.origin !== this.names[0]) this.placeAt(this.origin);   // a solve puts the first sensor at the origin again
     } finally {
       this.solving = false;
     }
   }
 
-  /** the rig solve in a worker, then the result and the view from above */
-  private async run(data: CalibData[], walks: CalibInput["walk"][]): Promise<void> {
+  /** the rig solve in a worker (or, with `refine`, the ICP from those poses), then the result and the views */
+  private async run(data: CalibData[], walks: CalibInput["walk"][], refine?: SensorCalibration[]): Promise<void> {
+    const options: CalibOptions = { origin: this.names.indexOf(this.origin), heights: this.names.map(n => this.heights.get(n) ?? null) };
     const worker = new Worker(new URL("./calibWorker.ts", import.meta.url));
     try {
       const reply = await new Promise<{ ok: boolean; result?: SensorCalibration[]; error?: string }>((resolve, reject) => {
         worker.onmessage = e => resolve(e.data);
         worker.onerror = e => reject(new Error(e.message));
-        worker.postMessage({ sensors: this.names.map((name, k) => ({ name, data: data[k], walk: walks[k] })) });
+        worker.postMessage({ sensors: this.names.map((name, k) => ({ name, data: data[k], walk: walks[k] })), options, refine });
       });
       if (!reply.ok) throw new Error(reply.error);
       this.calibrator.result = reply.result!;
+      if (!refine) this.solved = reply.result!.map(r => r.pose);
+      this.manual.clear();
       this.points = topDown(reply.result!, data);
     } finally {
       worker.terminate();
@@ -186,13 +234,15 @@ export class Calibration {
   }
 }
 
-/** each sensor's empty scene in the solved poses, x and y only, thinned to POINTS */
+/** each sensor's empty scene in the solved poses, thinned to POINTS (the page moves them itself while a pose is dragged) */
 function topDown(result: SensorCalibration[], data: CalibData[]): CalibrationPoints {
+  const cm = (v: number) => Math.round(v * 100) / 100;
   return {
     sensors: result.map((r, k) => {
-      const d = data[k], c = transformCloud(gridCloud(d.bg, d.rayX, d.rayY, d.rayZ, d.L, d.B), r.pose), step = Math.max(1, Math.ceil(c.count / POINTS)), xy: number[] = [];
-      for (let i = 0; i < c.count; i += step) xy.push(Math.round(c.p[3 * i] * 100) / 100, Math.round(c.p[3 * i + 1] * 100) / 100);
-      return { name: r.name, pose: toParams(r.pose), xy };
+      const d = data[k], c = transformCloud(gridCloud(d.bg, d.rayX, d.rayY, d.rayZ, d.L, d.B), r.pose), step = Math.max(1, Math.ceil(c.count / POINTS));
+      const xy: number[] = [], z: number[] = [];
+      for (let i = 0; i < c.count; i += step) { xy.push(cm(c.p[3 * i]), cm(c.p[3 * i + 1])); z.push(cm(c.p[3 * i + 2])); }
+      return { name: r.name, pose: toParams(r.pose), xy, z };
     }),
   };
 }

@@ -164,7 +164,7 @@ describe("recordings", () => {
 });
 
 describe("sessions", () => {
-  const POSE = { x: 1, y: 2, z: 1, yaw: 30, pitch: 0, roll: 0 };
+  const POSE = { x: 1, y: 2, z: 1, yaw: 30 };
 
   it("each file's header names its sensor, its place and its pose; poses are stored back into the headers", async () => {
     const rec = new SessionRecorder(dir, () => ({ sensors: [{ name: "b", pose: POSE, ip: "10.0.0.1", mount: "auto" }] }));

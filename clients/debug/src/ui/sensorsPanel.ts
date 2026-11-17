@@ -19,7 +19,7 @@ export interface SensorsEvents {
 
 const fmtPose = (p: Pose): string => {
   const q = toParams(p);
-  return `x ${q.x.toFixed(2)} · y ${q.y.toFixed(2)} · z ${q.z.toFixed(2)} m · yaw ${q.yaw.toFixed(1)}° · pitch ${q.pitch.toFixed(1)}° · roll ${q.roll.toFixed(1)}°`;
+  return `x ${q.x.toFixed(2)} · y ${q.y.toFixed(2)} · z ${q.z.toFixed(2)} m · yaw ${q.yaw.toFixed(1)}°`;
 };
 
 export class SensorsPanel {

@@ -55,7 +55,7 @@ describe("several sensors in a browser", () => {
     await page.waitForFunction(() => /calibrated/.test(document.getElementById("sensorList")!.textContent!), null, { timeout: 10_000 });
     await shot("rig-calibrated");
     const hdrs = ["a", "b", "c"].map(n => readTpcHeader(join(dir, "sim_rig3", `${n}.tpc`)));   // each file's header: its pose, its truth
-    const world = invert(fromParams({ ...hdrs[0].truth!, z: 0, pitch: 0, roll: 0 }));               // a's levelled frame
+    const world = invert(fromParams({ ...hdrs[0].truth!, z: 0 }));                                  // the floor below a
     for (const h of hdrs) {
       const e = poseError(fromParams(h.rig!.pose!), compose(world, fromParams(h.truth!)));
       expect(e.dist, h.sensor).toBeLessThan(0.05);

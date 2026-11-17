@@ -19,7 +19,7 @@ const wallY = (inp: SurfaceInput, r: Float32Array) => Array.from(r, (d, i) => {
 });
 
 describe("merging surfaces", () => {
-  const [a, b] = RIG3, off = fromParams({ x: 0, y: 0.015, z: 0, yaw: 0, pitch: 0, roll: 0 });
+  const [a, b] = RIG3, off = fromParams({ x: 0, y: 0.015, z: 0, yaw: 0 });
   const ins = [input(a), input(b, compose(off, b.pose))];             // b believed 1.5 cm off: two walls
   const [ma, mb] = mergeSurfaces(ins);
   const mean = (v: number[]) => v.reduce((x, y) => x + y, 0) / v.length;

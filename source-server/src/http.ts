@@ -2,14 +2,15 @@
 // management page (web/dist) at /.
 //
 //   GET    /api/state                 live sensors (address, rate, clock, errors), recording progress, replays, calibration
-//   GET    /api/status?sensor=        a live sensor's REST device values
+//   GET    /api/status?sensor=        a live sensor's REST device values (default: the main sensor)
 //   GET    /api/registry/sensors      the configured sensors; POST adds one, PUT/DELETE /api/registry/sensors/{name}
-//   GET    /api/rig?recording=        the poses: the live rig, or a recording's; PUT stores them
+//                                     (PUT {"main": true} makes it the main one, {"rename": "new"} renames it)
+//   GET    /api/rig?recording=        the poses: the live rig, or a recording's; PUT stores them; POST /api/rig/origin {sensor} makes it the main one
 //   GET    /api/recordings            list (name, bytes, scans, seconds, created, sensors of a session)
 //   GET    /api/recordings/{name}     download (a session folder as .zip); DELETE removes it
 //   POST   /api/record                {"action": "start" | "stop"}
-//   GET    /api/calibration           progress and result; POST {"action": start|cancel|accept|discard, "recording"?, "options"?}
-//   GET    /api/calibration/points    the solved result's empty scenes from above (x, y per sensor)
+//   GET    /api/calibration           progress and result; POST {"action": start|cancel|accept|discard|resolve|origin|adjust|reset|refine, ...}
+//   GET    /api/calibration/points    the solved result's empty scenes (x, y and z per sensor)
 //   GET    /api/consumers             the connected processing servers
 //   GET    /api/registry/consumers    the registered ones with their tokens; POST adds one, DELETE /api/registry/consumers/{name}
 //   GET    /api/settings              the server's own settings as fields and values (admin); PUT changes some, at once
@@ -18,6 +19,8 @@ import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { NotFoundError } from "@mrs6000/server-common/errors";
 import { checkRegion, type Region } from "@mrs6000/processing/fusion/calib/region";
+import type { PoseParams } from "@mrs6000/processing/fusion/pose";
+import { mainOf } from "@mrs6000/wire/rig";
 import { body, errorResponse, guard, json, needToken, notBuilt, oneOf, staticFiles, InvalidRequest } from "@mrs6000/server-common/http";
 import { settingsView } from "@mrs6000/server-common/settings";
 import type { SettingsSaved } from "@mrs6000/wire/settings";
@@ -45,7 +48,8 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
     guard(req, store.data.origins);
     if (p === "/api/state" && m === "GET") return json(hub.state());
     if (p === "/api/status" && m === "GET") {
-      const s = hub.liveSensor(q("sensor") ?? hub.liveNames()[0] ?? "");
+      const live = hub.liveNames(), main = mainOf(store.rig);
+      const s = hub.liveSensor(q("sensor") ?? (main && live.includes(main) ? main : live[0]) ?? "");
       return json({ device: s.status, error: s.error });
     }
 
@@ -54,10 +58,19 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
     const rm = p.match(/^\/api\/registry\/sensors\/([^/]+)$/);
     if (rm && (m === "PUT" || m === "DELETE")) {
       admin(req);
-      const name = decodeURIComponent(rm[1]);
-      const out = m === "PUT" ? store.updateSensor(name, await body(req)) : (store.removeSensor(name), store.data.sensors);
+      const name = decodeURIComponent(rm[1]), wasMain = mainOf(store.rig);
+      if (m === "PUT") {
+        const b = await body(req);
+        if (b.main === true) { await hub.setOrigin(name); return json(store.data.sensors.find(s => s.name === name)); }
+        const out = store.updateSensor(name, b);
+        o.onRegistry?.();
+        return json(out);
+      }
+      store.removeSensor(name);
+      const main = mainOf(store.rig);                     // the main sensor went: the next one's floor is the world now
+      if (name === wasMain && main && store.data.sensors.find(s => s.name === main)?.pose) await hub.setOrigin(main);
       o.onRegistry?.();
-      return json(out);
+      return json(store.data.sensors);
     }
 
     if (p === "/api/rig" && m === "GET") {
@@ -97,7 +110,7 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
     }
     if (p === "/api/calibration" && m === "POST") {
       admin(req);
-      const b = await body(req), action = oneOf(b.action, ["start", "cancel", "accept", "discard", "resolve", "origin"], "action");
+      const b = await body(req), action = oneOf(b.action, ["start", "cancel", "accept", "discard", "resolve", "origin", "adjust", "reset", "refine"], "action");
       if (action === "start") {
         if (b.recording !== undefined && typeof b.recording !== "string") throw new InvalidRequest("recording: a recording name");
         const opt = (b.options ?? {}) as Record<string, number>;
@@ -108,6 +121,12 @@ export function createApp(hub: Hub, store: Store, o: AppOptions = {}): Handler {
         if (typeof b.sensor !== "string") throw new InvalidRequest("sensor: a sensor name");
         return json(hub.setCalibrationOrigin(b.sensor).state());
       }
+      if (action === "adjust") {
+        if (typeof b.sensor !== "string") throw new InvalidRequest("sensor: a sensor name");
+        return json(hub.adjustCalibration(b.sensor, b.pose as PoseParams).state());
+      }
+      if (action === "reset") return json(hub.resetCalibration().state());
+      if (action === "refine") return json((await hub.refineCalibration()).state());
       if (action === "resolve") {
         let region: Region | null = null;
         if (b.region !== null && b.region !== undefined) {

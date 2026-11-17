@@ -15,7 +15,7 @@ import { DIST_UNIT_MM, type Frame, type Header } from "@mrs6000/wire/frame";
 export interface SensorFrame extends Frame { hdr: Header; rate: number; seq: number }
 
 /** a confirmed track of one sensor, in its own frame (calibration records the walker's detections) */
-export interface TrackSummary { id: number; moved: boolean; static: boolean; det: { x: number; y: number; z: number } | null }
+export interface TrackSummary { id: number; moved: boolean; static: boolean; det: { x: number; y: number; z: number; z0: number; clipped: boolean } | null }
 
 /** what a processed scan gives the rest of the server */
 export interface SensorOutput {
@@ -79,7 +79,7 @@ export class SensorCore {
     const on = p.cfg.objects.on;
     return {
       seq: f.seq, t: f.t, observations: on ? observe(this.index, this.pose, f.t, det, g) : [],
-      tracks: on ? det.confirmed.map(t => ({ id: t.id, moved: t.moved, static: t.static, det: t.det ? { x: t.det.x, y: t.det.y, z: t.det.z } : null })) : [],
+      tracks: on ? det.confirmed.map(t => ({ id: t.id, moved: t.moved, static: t.static, det: t.det ? { x: t.det.x, y: t.det.y, z: t.det.z, z0: t.det.z0, clipped: t.det.clipped } : null })) : [],
       raw: Float32Array.from(g.raw), bgReady: det.bgModel.ready, stats: { ...p.stats },
     };
   }

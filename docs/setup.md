@@ -39,7 +39,7 @@ and, for the source server, `--offline` (no sensor connection: tests, demos).
 
 | Server | Database | Edited on | Holds |
 |---|---|---|---|
-| source | `source-server/data/source.db` | its page: Sensors, Registered processing servers, Settings | the sensors (address, enabled, mount, pose), the registered processing servers with their tokens, address and port, the recordings folder, `open`, admin token, other allowed origins |
+| source | `source-server/data/source.db` | its page: Sensors, Registered processing servers, Settings | the sensors (address, enabled, mount, which one is main, pose), the registered processing servers with their tokens, address and port, the recordings folder, `open`, admin token, other allowed origins |
 | debug | `proc-servers/debug/data/debug.db` | the viewer's Server section | the source server's URL and its token there, its name, a replay every page opens first, address and port, its own objects and their processing settings, admin token, origins |
 | object detection | `proc-servers/object-detection/data/<name>.db` | its page's Server section | the source server's URL and token, its name, address and port, processing settings, track cache folder, replays at once, registered clients, `open`, admin token, origins |
 

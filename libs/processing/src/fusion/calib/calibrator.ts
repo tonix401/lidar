@@ -2,23 +2,28 @@
 //   empty  — every sensor learns its empty scene; nobody may be in it (2 s with no moving object anywhere)
 //   walk   — one person walks a wide loop through the shared area; each sensor's track of them is recorded
 //   done   — floor → walk → ICP solved (calibrateRig), waiting to be accepted or discarded
+// The walk is ready once it is long enough and covers enough ground: a walk along one line can't fix the turn.
 import type { Grid } from "../../pipeline/grid";
 import { gridCloud } from "./icp";
 import { calibrateRig, type CalibInput, type CalibOptions, type SensorCalibration } from "./rig";
+import { walkSpread } from "./walk";
 
 /** what the calibration reads of a sensor's processing: a Processor, the page's mirror of one, or the server's
  *  summary of a sensor worker (its rays, its empty scene, its confirmed tracks) */
 export interface Processed {
   readonly grid: Pick<Grid, "L" | "B" | "rayX" | "rayY" | "rayZ"> | null;
   readonly objects: {
-    readonly confirmed: readonly { moved: boolean; static: boolean; det: { x: number; y: number; z: number } | null }[];
+    readonly confirmed: readonly { moved: boolean; static: boolean; det: { x: number; y: number; z: number; z0?: number; clipped?: boolean } | null }[];
     readonly bgModel: { readonly ready: boolean; readonly bg: Float32Array };
   } | null;
 }
 
 export type CalibPhase = "idle" | "empty" | "walk" | "done" | "failed";
 
-export interface CalibratorOptions { walkSeconds?: number; minSamples?: number; emptySeconds?: number }
+export interface CalibratorOptions {
+  walkSeconds?: number; minSamples?: number; emptySeconds?: number;
+  minSpread?: number;            // m: the walk's smaller standard deviation, as the sensor that saw most of it saw it
+}
 
 export class Calibrator {
   phase: CalibPhase = "idle";
@@ -31,7 +36,7 @@ export class Calibrator {
 
   constructor(readonly names: string[], o: CalibratorOptions = {}) {
     this.walk = names.map(() => []);
-    this.o = { walkSeconds: o.walkSeconds ?? 30, minSamples: o.minSamples ?? 100, emptySeconds: o.emptySeconds ?? 2 };
+    this.o = { walkSeconds: o.walkSeconds ?? 30, minSamples: o.minSamples ?? 100, emptySeconds: o.emptySeconds ?? 2, minSpread: o.minSpread ?? 0.5 };
   }
 
   start(): void {
@@ -51,14 +56,19 @@ export class Calibrator {
       else if (t - this.since >= this.o.emptySeconds) { this.phase = "walk"; this.since = t; }
     } else if (this.phase === "walk") {
       const m = moving(p);
-      if (m.length === 1) { const d = m[0].det!; this.walk[k].push({ t, x: d.x, y: d.y, z: d.z }); }
+      if (m.length === 1) {
+        const d = m[0].det!;
+        this.walk[k].push({ t, x: d.x, y: d.y, z: d.z, ...(d.z0 !== undefined && d.clipped === false ? { z0: d.z0 } : {}) });
+      }
     }
   }
 
-  /** what the panel shows: seconds walked, samples per sensor, whether solving makes sense yet */
-  progress(): { seconds: number; samples: number[]; ready: boolean } {
+  /** what the panel shows: seconds walked, samples per sensor, the ground covered (m), whether solving makes sense yet */
+  progress(): { seconds: number; samples: number[]; spread: number; ready: boolean } {
     const seconds = this.phase === "walk" ? this.now - this.since : 0, samples = this.walk.map(w => w.length);
-    return { seconds, samples, ready: this.phase === "walk" && seconds >= this.o.walkSeconds && samples.every(n => n >= this.o.minSamples) };
+    const most = this.walk.reduce((a, w) => (w.length > a.length ? w : a), this.walk[0] ?? []), spread = walkSpread(most);
+    return { seconds, samples, spread, ready: this.phase === "walk" && seconds >= this.o.walkSeconds && spread >= this.o.minSpread
+                                              && samples.every(n => n >= this.o.minSamples) };
   }
 
   /** floor → walk → ICP from each sensor's empty scene and recorded walk */

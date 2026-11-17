@@ -1,6 +1,6 @@
 // Inputs for calibration and fusion tests, made from the simulated rig (rig.ts) with known truth.
 import { DEG } from "../src/core/math";
-import { gridCloud } from "../src/fusion/calib/icp";
+import { gridCloud, type Cloud } from "../src/fusion/calib/icp";
 import type { CalibInput } from "../src/fusion/calib/rig";
 import { compose, fromParams, invert, toParams, type Pose } from "../src/fusion/pose";
 import { castScan, RIG3, ROOM, scanTime, simGeometry, toSensor, walker, type Room, type SimSensor } from "./rig";
@@ -24,22 +24,31 @@ export function cloudOf(s: SimSensor, room = EMPTY, noise = 0.003) {
   return gridCloud(d, rx, ry, rz, L, B);
 }
 
-/** the true pose of `s` in the calibration's world: the first sensor's levelled frame */
+/** the true pose of `s` in the calibration's world: the floor below the first sensor */
 export function truth(s: SimSensor, first = RIG3[0]): Pose {
-  const a = toParams(first.pose);
-  return compose(invert(fromParams({ x: a.x, y: a.y, z: 0, yaw: a.yaw, pitch: 0, roll: 0 })), s.pose);
+  return compose(invert(fromParams({ ...toParams(first.pose), z: 0 })), s.pose);
+}
+
+/** the empty scene without the floor: what a sensor whose floor is out of view (or cluttered) sees */
+export function withoutFloor(c: Cloud): Cloud {
+  const keep = Array.from({ length: c.count }, (_, i) => i).filter(i => c.n[3 * i + 2] < 0.9);
+  return { p: Float32Array.from(keep.flatMap(i => [c.p[3 * i], c.p[3 * i + 1], c.p[3 * i + 2]])),
+           n: Float32Array.from(keep.flatMap(i => [c.n[3 * i], c.n[3 * i + 1], c.n[3 * i + 2]])),
+           layer: Uint8Array.from(keep.map(i => c.layer[i])), count: keep.length };
 }
 
 /** the walker as each sensor's detector would report it: the visible side's centroid (0.1 m towards the
- *  sensor), 2 cm noise, at its scan times, on its clock (`clockErr` s behind the true time) */
+ *  sensor), 2 cm noise, at its scan times, on its clock (`clockErr` s behind the true time); its lowest point (the
+ *  feet) only once they are far enough away for the lowest layer to pass below them */
 export function detections(s: SimSensor, clockErr = 0, seconds = 40, seed = 1) {
-  const r = rng(seed), out: CalibInput["walk"] = [];
+  const r = rng(seed), out: CalibInput["walk"] = [], low = Math.tan(-elevations(simGeometry(s).L)[0] * DEG);
   for (let k = 0; k < seconds * 10; k++) {
     const t = scanTime(s, k), [p] = walker()(t);
     if (!p) continue;
     const toS = [s.pose.t[0] - p.x, s.pose.t[1] - p.y], h = Math.hypot(toS[0], toS[1]);
     const c = toSensor(s, [p.x + 0.1 * toS[0] / h + 0.02 * gauss(r), p.y + 0.1 * toS[1] / h + 0.02 * gauss(r), 0.9]);
-    if (c[0] > 0 && Math.abs(Math.atan2(c[1], c[0])) < 60 * DEG) out.push({ t: t - clockErr, x: c[0], y: c[1], z: c[2] });
+    const feet = h * low >= s.pose.t[2] ? { z0: 0.01 * gauss(r) - s.pose.t[2] } : {};   // nearer, the person is clipped
+    if (c[0] > 0 && Math.abs(Math.atan2(c[1], c[0])) < 60 * DEG) out.push({ t: t - clockErr, x: c[0], y: c[1], z: c[2], ...feet });
   }
   return out;
 }

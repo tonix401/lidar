@@ -67,10 +67,10 @@ export interface SensorInfo {
   clock?: { offset_s: number; drift_ppm: number; samples: number; resets: number };
 }
 
-/** the rig (libs/wire/src/rig.ts): poses in m and degrees */
-export interface RigPose { x: number; y: number; z: number; yaw: number; pitch: number; roll: number }
+/** the rig (libs/wire/src/rig.ts): level poses in m and degrees; `main`: the sensor the world's origin is below */
+export interface RigPose { x: number; y: number; z: number; yaw: number }
 export interface RigSensor {
-  name: string; ip?: string; pose?: RigPose; time_offset_s?: number; calibrated?: string;
+  name: string; main?: boolean; ip?: string; pose?: RigPose; time_offset_s?: number; calibrated?: string;
   quality?: Record<string, unknown>;
 }
 export interface Rig { sensors: RigSensor[] }

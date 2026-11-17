@@ -10,12 +10,15 @@ was measured and what is still open is [at the end](#measured-2026-10-20).
 
 - **Addresses:** every sensor needs its own IP. New units all ship with the same one; set it with SOPAS or the
   web UI for now (a set-ip tool is not written yet, see [open](#not-done-yet)).
-- **Placement:** fixed, looking into the shared area from different sides, **within 10° of level** and each
-  **seeing some floor** (the lowest layer looks down 13°, so about 4 m out at 1 m height). Overlap between
+- **Placement:** fixed, looking into the shared area from different sides, **mounted level** (calibration solves
+  x, y, height and yaw only; a sensor that is not level is reported, "its floor leans …"), at any height, and
+  ideally **seeing some floor** (the lowest layer looks down 13°, so about 4 m out at 1 m height). Overlap between
   sensors is what calibration and fusion use: the more of the floor and walls two sensors share, the better.
 - **Starting:** run `make run` and add them on the source server's page (**Sensors**: name, address, mount); the live
   sensors restart with the new list, and the source server keeps it in its database (`source-server/data/source.db`,
-  gitignored). Names: letters, digits, `_` and `-`. With none added, it connects one sensor at the default address.
+  gitignored). Names: letters, digits, `_` and `-`; a sensor can be renamed and keeps its pose. With none added,
+  there are no live sensors. One of them is the **main sensor** (the first, until another is picked in the Main
+  column): the world is the floor below it, and it is the first sensor of the processing servers and the debug page.
 - **Without sensors:** `make sim-session` writes a simulated 3-sensor session to `recordings/sim_rig3/`
   (45 s: 3 s empty, then one person walking a loop). With `make run ARGS="--offline"`, calibrate it on the source
   server's page (**Calibration**, target "recording sim_rig3") and replay it in the viewer. Each file's header holds
@@ -53,30 +56,45 @@ fast as the sensor workers go):
 1. **Empty scene:** nobody in the area until every sensor has its empty scene and 2 s passed without a moving
    object.
 2. **Walk:** one person walks a wide loop through the area all sensors see, for at least 30 s (and until every
-   sensor tracked them at least 100 times).
+   sensor tracked them at least 100 times, and the walk covers ground: a standard deviation of at least 0.5 m
+   across, about 2 m from side to side).
 3. **Solve** (about a second, in its own thread) and check: the page shows every sensor's empty scene from above
    in the solved poses, where walls seen by several sensors should lie on top of each other. **Use these poses**
    stores them (the live sensors' in the source server's database, a recording's in its files' headers), or **Discard**. Every
    processing server watching gets the new rig at once, and the viewer reloads it.
+4. **Correct by hand** (before using the poses), if the check shows a sensor off: type or nudge its x, y, height
+   and yaw in the result's table (− / +: 1 cm or 0.1°, with Shift 10 cm or 1°); drag its dot (move) or arrow tip
+   (turn) in the view from above, or click it and use the arrow keys and [ ]; drag it up or down in the **view from
+   the side**, where every sensor's floor should lie on the line at 0. **Refine from here** matches the static scene
+   again from the poses as they are (step 4 below, from there); **Reset to solved** goes back. A height set by hand
+   counts as measured in every later solve. After use, the Sensors table edits the stored poses the same way (and
+   **Place by hand** gives an uncalibrated sensor one to edit).
 
-The world frame is the first sensor's levelled frame: z up, origin on the floor below it, x its forward
-direction. Any placed sensor can be the origin instead (**Make origin**, in the result's table before using the poses,
-or in the Sensors table afterwards; `POST /api/rig/origin`): the world is moved rigidly, so every pose, and the region
-below, follows and the sensors keep their places relative to each other. Nothing is measured again. The chosen sensor's own frame
-becomes the world (x forward, y left, z up the way it is mounted, origin at the sensor): it gets the identity pose and
-the whole point cloud is seen from it, so an evenly mounted sensor gives a level view and the first sensor's tilt is gone.
-Pick a level sensor if you want the floor level.
-The solve has three steps, each fixing what the one before can't:
+**Every sensor is mounted level** (as of 2026-11-17), so a pose is x, y, z and yaw: 4 degrees of freedom instead of 6.
+That is the usual split for rigs of several LiDARs: the ground fixes roll, pitch and height first, and what is left
+is a problem in the plane (CROON, arXiv 2203.03182; OpenCalib, arXiv 2205.14087); here roll and pitch are known
+to be 0. Stored poses from before, with a pitch or roll, lose them when read (a non-zero one is logged), and a pose
+with a non-zero pitch or roll is refused.
 
-1. **Floor → tilt and height** (`floor.ts`). RANSAC on the empty-scene points below the sensor whose own normals
-   are near-vertical, then a PCA refit over the inliers. The floor normal in the sensor frame is the world's
-   "up" as the sensor sees it: pitch = asin(−nₓ), roll = atan2(n_y, n_z), height = the plane's distance. A
-   plane only counts if at least 3 layers see it (one layer's beams lie on a cone, and part of a cone passes
-   for a tilted plane: this picked an 11.5° "floor" through wall hits before) and almost nothing lies more than
-   0.1 m below it. Points' own normals keep out the foot of a wall that the lowest layer hits a few cm up.
-2. **Walk → position and turn** (`walk.ts`). Each sensor tracks the person in its levelled frame; the tracks are
-   the same curve, rotated and shifted. Pair the samples by time, fit the 2D rigid transform (Kabsch: the angle
-   has a closed form), RANSAC over the pairs against moments where one track was wrong.
+The world frame is the floor below the **main sensor**: z up, origin on the floor under it, x its forward direction.
+Choosing another main sensor (the Main column, in the result's table before using the poses or in the Sensors table
+afterwards; `POST /api/rig/origin`, or `PUT /api/registry/sensors/<name> {"main": true}`) moves the world rigidly:
+with level sensors that is a turn about z and a shift along the floor, so every height stays and the floor stays at
+z = 0. Every pose and the region below follow, and the sensors keep their places relative to each other. Nothing is
+measured again. (Before 2026-11-17 the new origin's own frame became the world, so z = 0 was that sensor's height.)
+The solve has four steps, each fixing what the one before can't:
+
+1. **Floor → height** (`floor.ts`). With a level sensor the floor is the plane z = −height in its own frame. The
+   heights of the empty-scene points below the sensor whose own normals are near-vertical go into a 1 cm histogram,
+   which has a peak for every horizontal surface (floor, table tops); the floor is the lowest peak that at least 3
+   layers see (one layer's beams lie on a cone, and part of a cone passes for a surface: a RANSAC plane once picked an
+   11.5° "floor" through wall hits) with almost nothing more than 0.1 m below it. Points' own normals keep out the
+   foot of a wall that the lowest layer hits a few cm up. The floor's lean in the sensor frame is still measured, only
+   to warn when a sensor is not level after all (over 1°).
+2. **Walk → position, turn, clock and height difference** (`walk.ts`, `graph.ts`). Each sensor tracks the person in its
+   own frame; the tracks are the same curve, rotated and shifted. Pair the samples by time, fit the 2D rigid transform
+   (Kabsch: the angle has a closed form), RANSAC over the pairs against moments where one track was wrong. The same
+   pairs give the difference in height (the median of the centroids' differences).
    - A detection's centroid is the middle of the side the sensor sees, about 2r/π ≈ 0.1 m in front of the
      body's axis; sensors on different sides see different halves, so each sample is pushed back 0.1 m
      (`VISIBLE_SIDE_OFFSET`). On the simulated cylinder (r = 0.2 m) the centroid sat 0.15 m out; what is left
@@ -84,20 +102,35 @@ The solve has three steps, each fixing what the one before can't:
    - Time offsets between −0.3 and 0.3 s are searched for the smallest trimmed residual. The result is only
      applied beyond 25 ms (then with a warning to check the clock sync): on a loop a time shift partly looks
      like a turn, so the walk's offset is only good to ~10 ms, worse than the clock sync.
-   - Sensors are placed one by one, each against the placed sensor it shares the most of the walk with.
-3. **Static scene → all six degrees of freedom** (`icp.ts`). Point-to-plane ICP on the empty scenes: each
+   - **Every pair at once** (a pose graph, as in Quenzel et al. 2016, "Robust extrinsic calibration of multiple
+     stationary laser range finders"): every pair of sensors that saw the walker together is an edge, and all poses
+     are solved together by least squares (Huber-weighted, each edge weighted by its inliers over its residual²),
+     the main sensor fixed. Before, sensors were placed one by one, each against one placed sensor, so errors
+     added up along the chain and every other pair that saw the same walk was ignored. An edge that disagrees with
+     the rest (over 3× the median, at least 10 cm) is left out and the rig solved again, as long as no sensor loses
+     its connection by it. Clock offsets are solved the same way, over the kept edges.
+3. **Heights** (`graph.ts` `solveLinear`): one least-squares problem over the readings, weighted by how far each is
+   trusted: a height entered by hand (0.5 cm), a sensor's floor (1 cm), the walker's feet (5 cm: the lowest 5 % of
+   the walker's lowest points, from detections that the lowest layer passed below, so only once they were far
+   enough away) and the walk's differences between pairs (10 cm). So a sensor that sees no floor gets its height
+   from one that does, through the walk; without any floor, from the feet; else from a height typed in. Where its
+   height came from is in its quality ("height from the walk" etc.).
+4. **Static scene → x, y, z and yaw** (`icp.ts`). Point-to-plane ICP on the empty scenes: each
    point is matched to the nearest point of the other sensors and pulled onto its tangent plane; Gauss–Newton
-   on the linearised motion, over match distances 0.5 → 0.25 → 0.1 m, the closest 80 % of matches kept.
+   on the linearised motion (a turn about z and a shift), over match distances 0.5 → 0.25 → 0.1 m, the closest 80 %
+   of matches kept and those weighted by a Huber kernel (beyond 10 % of the match distance).
    - **All sensors at once** (`jointIcp`): refining one sensor at a time let two sensors that overlap each other
      well slide as a block against a third that pins them only weakly (6–7 cm off with 2–7 mm residuals).
    - **Normals** by PCA over ±4 beams and ±1 layer, and some neighbours must be in another layer: beams of one
      layer alone lie on a line, whose "normal" is any direction around it. Across layers the same-surface
      tolerance is 10 % of the range, since on a floor seen at a grazing angle the next layer lands ~0.3 m
      further out. Getting this wrong cost 1.4 cm and 0.13° of bias at 3 mm noise.
-   - **Unconstrained directions** (along a corridor; between sensors whose floor patches don't overlap) show as
-     eigenvalues of the 6×6 normal matrix below 0.003 per match. They are left out of the step, so they keep
-     the walk's estimate, and the panel names them.
-   - A result more than 0.5 m or 8° from the walk's estimate is not used.
+   - **Unconstrained directions** (along a corridor; the height between sensors whose floor patches don't overlap)
+     show as eigenvalues of the 4×4-per-sensor normal matrix below 0.003 per match. They are left out of the step, so
+     they keep the walk's and the floor's estimate, and the panel names them.
+   - Accepted per direction: a move of more than 0.5 m or 8° from the walk's estimate keeps the walk's position and
+     turn; one of more than 15 cm in height keeps the height from step 3.
+   - **Refine from here** (`refineRig`) runs only this step, from the poses as set by hand, with heights held to 5 cm.
 
 Each result lists the walk's residual, the scene's median residual and overlap, and any problem in words.
 
@@ -190,14 +223,17 @@ not real: **Cross-check with other sensors** (`pipeline/crosscheck.ts`, a stage 
 All live sensors record together into a session folder ([recordings.md](recordings.md#sessions)); a session
 replays as one timeline, each scan to its sensor's feed, with the poses it was recorded or calibrated with.
 
-## Measured (2026-10-20)
+## Measured (2026-10-20; calibration again 2026-11-17)
 
-On the simulated rig (`libs/processing/sim/rig.ts`: three sensors around an 8.5 × 6.2 m room with furniture,
-1–1.2 m up, tilted up to 2.5°; 24 × 301 beams; tests in `tests/calib.test.ts`, `tests/fusion-objects.test.ts`):
+On the simulated rig (`libs/processing/sim/rig.ts`: three sensors around an 8.5 × 6.2 m room with furniture;
+until 2026-11-17 1–1.2 m up and tilted up to 2.5°, since then level at 1.05, 1.6 and 0.75 m; 24 × 301 beams; tests in
+`tests/calib.test.ts`, `tests/fusion-objects.test.ts`):
 
 | | result |
 |---|---|
-| floor: tilt, height | within 0.1°, 1 cm (all three) |
+| floor: height (2026-11-17) | within 1 cm (all three), and the floor below a 0.72 m table top |
+| a sensor without a floor (2026-11-17) | its height from the walk within 5 cm; with no floor anywhere, from the walker's feet within 5 cm |
+| whole rig through the source server, recorded session (2026-11-17, 24 × 181 beams, 1 cm noise) | a 0.0 cm, b 0.2 cm / 0.01°, c 0.5 cm / 0.05° |
 | walk alone (ideal detections, 2 cm noise) | 3 cm, 0.3°; time offset to ~10 ms |
 | ICP, b against a ∪ c, from 20 cm / 5° off | 0.5 mm, 0.004° at 3 mm noise |
 | whole rig from the pipeline's own background and tracks (1 cm noise) | b 1.3 cm / 0.10°, c 1.05 cm / 0.08° (walk alone: 9–11 cm) |
@@ -235,6 +271,11 @@ view uploads only the parts it draws, and of those only the used range.
 ## Not done yet
 
 - **Drift watch:** re-checking the static residual every ~30 s to flag a sensor that was bumped.
+- **A start without the walk:** a coarse search over yaw, x and y on each pair's empty scenes seen from above
+  (correlative scan matching, as CROON does it), as a pose-graph edge where the walk is short or missing. Planned
+  on 2026-11-17, not built: the walk's pose graph and the hand corrections came first.
+- **The level-rig calibration on the real sensors** (2026-11-17: simulated only): the walk's height differences and
+  the walker's feet use the pipeline's centroid and lowest point, whose bias on real people is not measured.
 - **Setting a sensor's address** from here (a Bun tool or the source server's page): (left out until it can be tried on a device; a wrong
   network write can make a unit unreachable).
 - **On the real sensors:** cross-talk between sensors facing each other (outliers and ghosts with the other one

@@ -39,11 +39,11 @@ export const ROOM: Room = {
   people: walker(),
 };
 
-/** three sensors around the room, about 1 m up, slightly tilted (as on real stands) */
+/** three level sensors around the room, at different heights (as on real stands) */
 export const RIG3: SimSensor[] = [
-  { name: "a", pose: fromParams({ x: -3.4, y: -2.4, z: 1.05, yaw: 38, pitch: 2.5, roll: -1.2 }), phase: 0.013 },
-  { name: "b", pose: fromParams({ x: 3.9, y: -2.3, z: 1.2, yaw: 142, pitch: -1.5, roll: 0.8 }), phase: 0.061 },
-  { name: "c", pose: fromParams({ x: 0.4, y: 2.7, z: 0.95, yaw: -95, pitch: 1.0, roll: 1.6 }), phase: 0.087 },
+  { name: "a", pose: fromParams({ x: -3.4, y: -2.4, z: 1.05, yaw: 38 }), phase: 0.013 },
+  { name: "b", pose: fromParams({ x: 3.9, y: -2.3, z: 1.6, yaw: 142 }), phase: 0.061 },
+  { name: "c", pose: fromParams({ x: 0.4, y: 2.7, z: 0.75, yaw: -95 }), phase: 0.087 },
 ];
 
 export const simGeometry = (s: SimSensor) => {

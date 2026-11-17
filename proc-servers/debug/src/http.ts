@@ -24,6 +24,7 @@ import { body, errorResponse, guard, InvalidRequest, json, needToken, notBuilt, 
 import { settingsView } from "@mrs6000/server-common/settings";
 import { sourceGet } from "@mrs6000/server-common/sourceClient";
 import type { SettingsSaved } from "@mrs6000/wire/settings";
+import { mainOf } from "@mrs6000/wire/rig";
 import { ACTIONS } from "@mrs6000/wire/source";
 import type { Hub } from "./hub";
 import { FIELDS, type Store } from "./store";
@@ -44,7 +45,8 @@ export function createApp(hub: Hub, store: Store, webDir: string | null = null,
       return sensor;
     };
     if (p === "/api/frame" && m === "GET") {
-      const name = known(q("sensor")) ?? view.sensors[0];
+      const main = mainOf(view.pipeline.rig);
+      const name = known(q("sensor")) ?? (main && view.sensors.includes(main) ? main : view.sensors[0]);
       if (name === undefined) { await Bun.sleep(1000); return new Response(new Uint8Array(0), { headers: { "X-Meta": "{}", "Cache-Control": "no-store" } }); }
       const f = await view.feed(name).wait(Number(q("after") ?? 0) || 0);
       return new Response(f.data, { headers: { "Content-Type": "application/octet-stream", "X-Meta": JSON.stringify({ ...f.meta, id: f.id }), "Cache-Control": "no-store" } });

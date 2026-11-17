@@ -25,7 +25,7 @@ import { DEFAULTS, Store } from "../src/store";
 import { Consumers, type Conn } from "../src/ws";
 import { endless, waitUntil, writeRecording } from "./helpers";
 
-const POSE = { x: 1, y: -2, z: 1.1, yaw: 30, pitch: 1.5, roll: -0.5 };
+const POSE = { x: 1, y: -2, z: 1.1, yaw: 30 };
 
 interface Running { hub: Hub; store: Store; consumers: Consumers; app: ReturnType<typeof createApp>; base: string; stop(): Promise<void> }
 
@@ -228,7 +228,12 @@ describe("HTTP API", () => {
   it("the rig: merge rules, PUT for the live rig and for a session, pushed to its consumers", async () => {
     const rig = mergeRig({ sensors: [{ name: "a", ip: "10.0.0.1" }] }, { sensors: [{ name: "a", pose: POSE, ip: "x" }, { name: "b", time_offset_s: 0.01 }] });
     expect(rig.sensors).toEqual([{ name: "a", ip: "10.0.0.1", pose: POSE }, { name: "b", time_offset_s: 0.01 }]);
-    for (const bad of [{ sensors: [{ name: "a b" }] }, { sensors: [{ name: "a", pose: { x: 1 } }] }, { sensors: 3 }]) expect(() => mergeRig(rig, bad)).toThrow();
+    for (const bad of [{ sensors: [{ name: "a b" }] }, { sensors: [{ name: "a", pose: { x: 1 } }] }, { sensors: 3 },
+                       { sensors: [{ name: "a", pose: { ...POSE, pitch: 1.5, roll: 0 } }] }])           // sensors are level
+      expect(() => mergeRig(rig, bad)).toThrow();
+    expect(mergeRig(rig, { sensors: [{ name: "a", pose: { ...POSE, pitch: 0, roll: 0 } }] }).sensors[0].pose).toEqual(POSE);   // the old form, level
+    expect(mergeRig(rig, { sensors: [{ name: "b", main: true }] }).sensors.map(s => s.main)).toEqual([undefined, undefined]);   // only with withMain
+    expect(mergeRig({ sensors: [{ name: "a", main: true }, { name: "b" }] }, { sensors: [{ name: "b", main: true }] }, true).sensors.map(s => !!s.main)).toEqual([false, true]);
     const r = start([endless()], new Store(join(dir, "source.db")));
     r.store.addSensor({ name: "sensor" });
     const { got } = watch(r, { kind: "live" });
@@ -236,23 +241,47 @@ describe("HTTP API", () => {
     const put = await r.app(new Request(r.base + "/api/rig", { ...post({ sensors: [{ name: "sensor", pose: POSE }] }), method: "PUT" }));
     expect(put.status).toBe(200);
     await waitUntil(() => got.rigs.length === 2);
-    expect(got.rigs[1]).toEqual({ sensors: [{ name: "sensor", pose: POSE }] });
+    expect(got.rigs[1]).toEqual({ sensors: [{ name: "sensor", main: true, pose: POSE }] });
     expect(new Store(join(dir, "source.db")).data.sensors[0].pose).toEqual(POSE);
     const bad = await r.app(new Request(r.base + "/api/rig", { ...post({ sensors: [{ name: "x", pose: POSE }] }), method: "PUT" }));
     expect(bad.status).toBe(400);
   });
 
-  it("the sensors: the registry's, else one at the default; a new database starts as a copy of empty.db", () => {
+  it("the sensors: the registry's (none: no live sensors); a new database starts as a copy of empty.db", () => {
     expect(parseSensorArg("left=192.168.0.2").name).toBe("left");
     expect(sensorSpecs([{ name: "a", ip: "1.2.3.4" }, { name: "b" }, { name: "c", ip: "5.6.7.8", enabled: false }]).map(s => s.name)).toEqual(["a"]);
-    expect(sensorSpecs([]).map(s => s.name)).toEqual(["sensor"]);
+    expect(sensorSpecs([])).toEqual([]);
     expect(parse([])).toMatchObject({ offline: false });
     expect(() => parse(["--port", "8100"])).toThrow();                          // a setting, not an option
     const template = join(dirname(fileURLToPath(import.meta.url)), "../empty.db");
     expect(new SettingsDb(template).load()).toEqual(DEFAULTS);                  // the committed one is the defaults (scripts/empty-db.ts)
     const s = new Store(join(dir, "source.db"), template);
     s.addSensor({ name: "a", ip: "1.2.3.4" });
-    expect(new Store(join(dir, "source.db"), template).data).toMatchObject({ port: 8000, sensors: [{ name: "a", ip: "1.2.3.4" }] });   // its own from now on
+    expect(new Store(join(dir, "source.db"), template).data).toMatchObject({ port: 8000, sensors: [{ name: "a", ip: "1.2.3.4", main: true }] });   // its own from now on
+  });
+
+  it("one list of sensors: exactly one main sensor, which moves the world with it; renaming keeps the pose; old tilted poses lose their tilt", async () => {
+    const store = new Store(join(dir, "source.db")), r = start([], store);
+    const call = async (method: string, url: string, body?: unknown) =>
+      (await r.app(new Request(r.base + url, body === undefined ? { method } : { ...post(body), method }))).json() as Promise<any>;
+    for (const n of ["a", "b", "c"]) await call("POST", "/api/registry/sensors", { name: n, ip: "10.0.0.1", main: true });   // main: ignored when adding
+    expect(store.data.sensors.map(s => !!s.main)).toEqual([true, false, false]);
+    await call("PUT", "/api/rig", { sensors: [{ name: "a", pose: { x: 0, y: 0, z: 1, yaw: 0 } }, { name: "b", pose: { x: 2, y: 0, z: 1.5, yaw: 90 } }] });
+    await call("PUT", "/api/registry/sensors/b", { main: true });
+    expect(store.data.sensors.map(s => !!s.main)).toEqual([false, true, false]);
+    const pose = (n: string) => store.data.sensors.find(s => s.name === n)!.pose!;
+    expect(pose("b")).toEqual({ x: 0, y: 0, z: 1.5, yaw: 0 });                       // above the origin, at its height
+    expect(pose("a")).toEqual({ x: expect.closeTo(0, 6), y: 2, z: 1, yaw: -90 });     // the floor stays at z = 0
+    expect((await call("PUT", "/api/registry/sensors/c", { main: true })).error).toMatch(/no pose/);
+    expect((await call("PUT", "/api/registry/sensors/a", { rename: "left" })).name).toBe("left");
+    expect(pose("left")).toEqual({ x: expect.closeTo(0, 6), y: 2, z: 1, yaw: -90 });
+    expect((await call("PUT", "/api/registry/sensors/left", { rename: "b" })).error).toMatch(/exists/);
+    await call("DELETE", "/api/registry/sensors/b");                                    // the main one went: the next one takes over, the world with it
+    expect(store.data.sensors.map(s => [s.name, !!s.main])).toEqual([["left", true], ["c", false]]);
+    expect(pose("left")).toEqual({ x: 0, y: 0, z: 1, yaw: 0 });
+    store.data.sensors[1].pose = { x: 1, y: 2, z: 1, yaw: 3, pitch: 2, roll: 0 } as any;   // as stored before sensors were level
+    store.save();
+    expect(new Store(join(dir, "source.db")).data.sensors[1].pose).toEqual({ x: 1, y: 2, z: 1, yaw: 3 });
   });
 
   it("settings: through the page's API, applied at once, saved; a refused change changes nothing", async () => {
@@ -316,20 +345,37 @@ describe("calibration", () => {
     const before = ["a", "b", "c"].map(n => poseOf(all, n));
     const moved = await call("POST", "/api/calibration", { action: "origin", sensor: "c" });
     expect(moved.origin).toBe("c");
-    expect(["x", "y", "z", "yaw", "pitch", "roll"].map(k => Math.abs(poseOf(moved, "c")[k]) < 1e-6)).toEqual(Array(6).fill(true));
+    expect(["x", "y", "yaw"].map(k => Math.abs(poseOf(moved, "c")[k]) < 1e-6)).toEqual(Array(3).fill(true));
+    expect(poseOf(moved, "c").z).toBeCloseTo(poseOf(all, "c").z, 6);                                 // heights stay: the floor is the world's
     const d3 = (p: any, q: any) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
     expect(d3(poseOf(moved, "a"), poseOf(moved, "b"))).toBeCloseTo(d3(before[0], before[1]), 6);   // a and b did not move relative to each other
     expect((await call("POST", "/api/calibration", { action: "origin", sensor: "zz" })).error).toMatch(/unknown sensor/);
     const again = await call("POST", "/api/calibration", { action: "resolve", region: null });      // a solve keeps the chosen origin
     expect([again.origin, Math.abs(poseOf(again, "c").x) < 1e-6]).toEqual(["c", true]);
     await call("POST", "/api/calibration", { action: "origin", sensor: "a" });
+    // by hand: b pushed 30 cm and 4° off, then the scene matched again from there; reset brings back the solve
+    const solved = poseOf(await call("GET", "/api/calibration"), "b"), off = { ...solved, x: solved.x + 0.3, yaw: solved.yaw + 4 };
+    const adjusted = await call("POST", "/api/calibration", { action: "adjust", sensor: "b", pose: off });
+    expect(poseOf(adjusted, "b")).toEqual(off);
+    expect(adjusted.result.find((x: any) => x.name === "b").manual).toBe(true);
+    const refined = poseOf(await call("POST", "/api/calibration", { action: "refine" }), "b");
+    expect(Math.hypot(refined.x - solved.x, refined.y - solved.y)).toBeLessThan(0.02);
+    expect(Math.abs(refined.yaw - solved.yaw)).toBeLessThan(0.2);
+    await call("POST", "/api/calibration", { action: "adjust", sensor: "a", pose: { x: 5, y: 5, z: 1.05, yaw: 9 } });  // the main one: only its height,
+    expect(poseOf(await call("GET", "/api/calibration"), "a")).toEqual({ x: expect.closeTo(0, 9), y: expect.closeTo(0, 9), z: 1.05, yaw: expect.closeTo(0, 9) });
+    expect(r.hub.calibration!.heights.get("a")).toBe(1.05);                                          // as measured: every later solve keeps it
+    expect((await call("GET", "/api/calibration/points")).sensors[0].z.length).toBeGreaterThan(100);
+    const reset = await call("POST", "/api/calibration", { action: "reset" });
+    expect(poseOf(reset, "b")).toEqual(solved);
+    expect((await call("POST", "/api/calibration", { action: "adjust", sensor: "b", pose: { x: 1 } })).error).toMatch(/pose y/);
     await call("POST", "/api/calibration", { action: "resolve", region: kept });
     const accepted = await call("POST", "/api/calibration", { action: "accept" });
     expect(accepted.sensors.every((e: { pose?: unknown }) => e.pose)).toBe(true);
+    expect(accepted.sensors.map((e: { main?: boolean }) => !!e.main)).toEqual([true, false, false]);
     expect(accepted.sensors.map((e: { region?: unknown }) => e.region)).toEqual([kept, kept, kept]);   // stored with the poses: the stream is cut by it
     const hdrs = ["a", "b", "c"].map(n => ({ name: n, ...readTpcHeader(join(path, `${n}.tpc`)) }));   // the poses are in each file's header
     expect(hdrs.map(h => [h.sensor, h.index])).toEqual([["a", 0], ["b", 1], ["c", 2]]);
-    const first = hdrs[0].truth!, world = invert(fromParams({ ...first, z: 0, pitch: 0, roll: 0 }));   // a's levelled frame
+    const first = hdrs[0].truth!, world = invert(fromParams({ ...first, z: 0 }));                       // the floor below a
     for (const e of hdrs) {
       const truth = compose(world, fromParams(e.truth!)), err = poseError(fromParams(e.rig!.pose!), truth);
       console.log(`${e.name}: ${(err.dist * 100).toFixed(1)} cm, ${err.angle.toFixed(2)}°`);
@@ -341,8 +387,10 @@ describe("calibration", () => {
     const rig = await call("POST", "/api/rig/origin?recording=calib", { sensor: "c" });
     const c = rig.sensors.find((e: any) => e.name === "c");
     expect(rig.sensors.every((e: any) => e.region?.length === 4)).toBe(true);
-    expect(c.pose).toEqual({ x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 });     // the new origin is the world: its own frame
+    expect(c.pose).toMatchObject({ x: 0, y: 0, yaw: 0 });                             // above the world's origin, at its height
+    expect(c.pose.z).toBeCloseTo(0.75, 1);
+    expect(c.main).toBe(true);
     expect((await call("GET", "/api/rig?recording=calib")).sensors.find((e: any) => e.name === "c").pose).toEqual(c.pose);
-    expect((await call("POST", "/api/rig/origin?recording=calib", { sensor: "zz" })).error).toMatch(/no pose/);
+    expect((await call("POST", "/api/rig/origin?recording=calib", { sensor: "zz" })).error).toMatch(/unknown sensor/);
   });
 });

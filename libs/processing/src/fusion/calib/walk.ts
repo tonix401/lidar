@@ -1,26 +1,26 @@
-// Calibration step 2: one person walking → time offset, x, y and yaw of a sensor relative to another.
-// Both sensors (levelled by the floor fit) track the same person, so their tracks are the same curve, only
-// rotated and shifted (and shifted in time, if the clocks still differ). For each candidate time offset,
-// pair the samples by time, fit the 2D rigid transform (Kabsch) and keep the offset with the smallest
-// trimmed residual; then RANSAC over the pairs drops moments where one sensor's track was wrong (an arm
-// split off, the person half hidden).
+// Calibration step 2: one person walking → time offset, x, y, yaw and height of a sensor relative to another.
+// Both sensors are level and track the same person, so their tracks are the same curve, only rotated and
+// shifted (and shifted in time, if the clocks still differ). For each candidate time offset, pair the samples
+// by time, fit the 2D rigid transform (Kabsch) and keep the offset with the smallest trimmed residual; then
+// RANSAC over the pairs drops moments where one sensor's track was wrong (an arm split off, the person half
+// hidden). The same pairs give the difference in height: the person is at one height, seen from two.
 import type { Detection } from "../../objects/segment";
 import { kabsch2d } from "../linalg";
-import { apply, type Pose } from "../pose";
 
-export interface WalkSample { t: number; x: number; y: number }      // levelled frame of its sensor (m)
+export interface WalkSample { t: number; x: number; y: number; z: number }      // sensor frame (m)
 
 /** a person's centroid is the middle of the part the sensor sees, about 2r/π ≈ 0.1 m in front of the body's
  *  axis; sensors on different sides see different halves, so each sample is pushed back by that much */
 export const VISIBLE_SIDE_OFFSET = 0.1;
 
-export function walkSample(det: Pick<Detection, "x" | "y" | "z">, t: number, level: Pose): WalkSample {
-  const p = apply(level, [det.x, det.y, det.z]), h = Math.hypot(p[0], p[1]) || 1;
-  return { t, x: p[0] * (1 + VISIBLE_SIDE_OFFSET / h), y: p[1] * (1 + VISIBLE_SIDE_OFFSET / h) };
+export function walkSample(det: Pick<Detection, "x" | "y" | "z">, t: number): WalkSample {
+  const h = Math.hypot(det.x, det.y) || 1;
+  return { t, x: det.x * (1 + VISIBLE_SIDE_OFFSET / h), y: det.y * (1 + VISIBLE_SIDE_OFFSET / h), z: det.z };
 }
 
 export interface WalkAlignment {
-  theta: number; tx: number; ty: number;     // levelled frame of `other` → levelled frame of `ref` (rad, m)
+  theta: number; tx: number; ty: number;     // frame of `other` → frame of `ref` in x, y (rad, m)
+  dz: number; dzMad: number;                 // `other`'s height above `ref`'s (m), and the median spread of that over the pairs
   dt: number;                                // add to `other`'s times to get `ref`'s (s)
   rms: number;                               // over the inliers (m)
   pairs: number; inliers: number;
@@ -30,19 +30,19 @@ export interface WalkAlignment {
 export interface WalkOptions { maxLag?: number; minPairs?: number; inlierTol?: number; maxGap?: number }
 
 /** ref's position at time t (linear between samples less than maxGap apart), or null */
-function at(ref: WalkSample[], t: number, maxGap: number): number[] | null {
+function at(ref: WalkSample[], t: number, maxGap: number): number[] | null {   // x, y, z
   let lo = 0, hi = ref.length - 1;
   if (!ref.length || t < ref[0].t || t > ref[hi].t) return null;
   while (hi - lo > 1) { const m = (lo + hi) >> 1; if (ref[m].t <= t) lo = m; else hi = m; }
   const a = ref[lo], b = ref[hi];
   if (b.t - a.t > maxGap) return null;
   const w = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
-  return [a.x + w * (b.x - a.x), a.y + w * (b.y - a.y)];
+  return [a.x + w * (b.x - a.x), a.y + w * (b.y - a.y), a.z + w * (b.z - a.z)];
 }
 
 function pairsAt(ref: WalkSample[], other: WalkSample[], dt: number, maxGap: number): [number[], number[]][] {
   const out: [number[], number[]][] = [];
-  for (const s of other) { const r = at(ref, s.t + dt, maxGap); if (r) out.push([[s.x, s.y], r]); }
+  for (const s of other) { const r = at(ref, s.t + dt, maxGap); if (r) out.push([[s.x, s.y, s.z], r]); }
   return out;
 }
 
@@ -76,11 +76,12 @@ function robustFit(pairs: [number[], number[]][], tol: number) {
     fit = kabsch2d(best.map(k => pairs[k][0]), best.map(k => pairs[k][1]));
   }
   const r = residuals(best.map(k => pairs[k]), fit);
-  return { ...fit, inliers: best.length, rms: Math.sqrt(r.reduce((a, v) => a + v * v, 0) / r.length) };
+  return { ...fit, kept: best, rms: Math.sqrt(r.reduce((a, v) => a + v * v, 0) / r.length) };
 }
 
 /** smaller standard deviation of the positions (principal axes): a walk along one line can't fix the yaw */
-function spread(s: WalkSample[]): number {
+export function walkSpread(s: readonly { x: number; y: number }[]): number {
+  if (!s.length) return 0;
   const n = s.length, mx = s.reduce((a, p) => a + p.x, 0) / n, my = s.reduce((a, p) => a + p.y, 0) / n;
   let xx = 0, xy = 0, yy = 0;
   for (const p of s) { xx += (p.x - mx) ** 2; xy += (p.x - mx) * (p.y - my); yy += (p.y - my) ** 2; }
@@ -105,7 +106,12 @@ export function alignWalks(ref: WalkSample[], other: WalkSample[], o: WalkOption
     if (s < bestScore) { bestScore = s; bestDt = dt; }
   }
   const pairs = pairsAt(ref, other, bestDt, maxGap);
-  const fit = robustFit(pairs, tol);
-  return { theta: fit.theta, tx: fit.tx, ty: fit.ty, dt: bestDt, rms: fit.rms, pairs: pairs.length,
-           inliers: fit.inliers, spread: spread(ref) };
+  const fit = robustFit(pairs, tol), dz = fit.kept.map(k => pairs[k][1][2] - pairs[k][0][2]), m = median(dz);
+  return { theta: fit.theta, tx: fit.tx, ty: fit.ty, dz: m, dzMad: median(dz.map(v => Math.abs(v - m))), dt: bestDt, rms: fit.rms,
+           pairs: pairs.length, inliers: fit.kept.length, spread: walkSpread(ref) };
+}
+
+function median(v: number[]): number {
+  const s = [...v].sort((a, b) => a - b);
+  return s.length ? s[s.length >> 1] : 0;
 }
