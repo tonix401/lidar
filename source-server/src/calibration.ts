@@ -7,10 +7,10 @@
 import { defaultConfig } from "@mrs6000/processing/config/config";
 import { gridCloud, transformCloud } from "@mrs6000/processing/fusion/calib/icp";
 import { Calibrator, type CalibratorOptions, type Processed } from "@mrs6000/processing/fusion/calib/calibrator";
-import { moveOrigin, moveRegion } from "@mrs6000/processing/fusion/calib/origin";
+import { moveRegion, worldChange } from "@mrs6000/processing/fusion/calib/origin";
 import { cropToRegion, type Region } from "@mrs6000/processing/fusion/calib/region";
 import { rigEntry, type CalibInput, type SensorCalibration } from "@mrs6000/processing/fusion/calib/rig";
-import { toParams } from "@mrs6000/processing/fusion/pose";
+import { compose, toParams, type Pose } from "@mrs6000/processing/fusion/pose";
 import { describeError, ValueError } from "@mrs6000/server-common/errors";
 import type { CalibData, MountSetting, SensorFrame, SensorOutput } from "@mrs6000/server-common/sensor/core";
 import { SensorSet } from "@mrs6000/server-common/sensorSet";
@@ -130,22 +130,23 @@ export class Calibration {
     }
   }
 
-  /** move the world to `sensor`'s levelled frame (it stands at x = y = yaw = 0 then); the others keep their place relative to it */
+  /** move the world to `sensor`: it stands at x = y = yaw = 0 on its own floor's level (its tilt as its floor fit saw it), the
+   *  others keep their place relative to it, and so does the region */
   setOrigin(sensor: string): void {
     const res = this.calibrator.result, k = this.names.indexOf(sensor);
     if (this.calibrator.phase !== "done" || !res || !this.data || this.solving) throw new ValueError("there is no finished calibration to change");
     if (k < 0) throw new ValueError(`unknown sensor ${sensor}`);
-    const from = res[k].pose;
-    this.placeAt(sensor);
-    if (this.region) this.region = moveRegion(this.region, from);
+    const W = this.placeAt(sensor);
+    if (this.region) this.region = moveRegion(this.region, W);
   }
 
-  /** the result's poses in the world of `sensor` (a solve gives the first sensor's) */
-  private placeAt(sensor: string): void {
-    const res = this.calibrator.result!, poses = moveOrigin(res.map(r => r.pose), this.names.indexOf(sensor));
-    res.forEach((r, i) => { r.pose = poses[i]; });
+  /** the result's poses in the world of `sensor` (a solve gives the first sensor's); the change of world */
+  private placeAt(sensor: string): Pose {
+    const res = this.calibrator.result!, k = this.names.indexOf(sensor), W = worldChange(res[k].pose, res[k].floor);
+    res.forEach(r => { r.pose = compose(W, r.pose); });
     this.origin = sensor;
     this.points = topDown(res, this.data!);
+    return W;
   }
 
   /** solve again with only what lies inside `region` (world x, y pairs, in the poses of the current result), or with

@@ -85,7 +85,7 @@ async function refreshSlow(): Promise<void> {
 // ---------- sensors ----------
 /** the sensor at the world's origin: x = y = yaw = 0 (its pose is then just its height and tilt) */
 const atOrigin = (p: Pose) => Math.abs(p.x) < 1e-3 && Math.abs(p.y) < 1e-3 && Math.abs(p.yaw) < 1e-2;
-const originTitle = "the world's origin: the point on the floor below this sensor, x along its forward direction. Changing it moves every pose, no recalibration needed.";
+const originTitle = "the world's origin: the point on the floor below this sensor, x along its forward direction, up as this sensor saw the floor. Changing it moves every pose, no recalibration needed.";
 
 const fmtPose = (p: Pose) => `${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)} m · yaw ${p.yaw.toFixed(1)}° · pitch ${p.pitch.toFixed(1)}° · roll ${p.roll.toFixed(1)}°`;
 

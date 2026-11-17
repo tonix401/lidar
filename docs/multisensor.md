@@ -61,8 +61,12 @@ fast as the sensor workers go):
 
 The world frame is the first sensor's levelled frame: z up, origin on the floor below it, x its forward
 direction. Any placed sensor can be the origin instead (**Make origin**, in the result's table before using the poses,
-or in the Sensors table afterwards; `POST /api/rig/origin`): the world is only moved rigidly, so every pose, and the region
-below, follows and the sensors keep their places relative to each other. Nothing is measured again. The solve has three steps, each fixing what the one before can't:
+or in the Sensors table afterwards; `POST /api/rig/origin`): the world is moved rigidly, so every pose, and the region
+below, follows and the sensors keep their places relative to each other. Nothing is measured again. The new world's
+"up" is the new origin's own: the floor as that sensor saw it (its tilt and height, kept per sensor as `floor` in the
+rig entry by every calibration), so choosing an evenly mounted sensor levels the view by it, instead of keeping the tilt
+the first sensor's floor fit gave. A rig stored before `floor` was kept only turns and moves the world to the sensor
+(calibrate again to get it). The solve has three steps, each fixing what the one before can't:
 
 1. **Floor → tilt and height** (`floor.ts`). RANSAC on the empty-scene points below the sensor whose own normals
    are near-vertical, then a PCA refit over the inliers. The floor normal in the sensor frame is the world's

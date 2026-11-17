@@ -317,8 +317,8 @@ describe("calibration", () => {
     const moved = await call("POST", "/api/calibration", { action: "origin", sensor: "c" });
     expect(moved.origin).toBe("c");
     expect(["x", "y", "yaw"].map(k => Math.abs(poseOf(moved, "c")[k]) < 1e-6)).toEqual([true, true, true]);
-    expect(Math.hypot(poseOf(moved, "a").x - poseOf(moved, "b").x, poseOf(moved, "a").y - poseOf(moved, "b").y))
-      .toBeCloseTo(Math.hypot(before[0].x - before[1].x, before[0].y - before[1].y), 6);   // a and b did not move relative to each other
+    const d3 = (p: any, q: any) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+    expect(d3(poseOf(moved, "a"), poseOf(moved, "b"))).toBeCloseTo(d3(before[0], before[1]), 6);   // a and b did not move relative to each other
     expect((await call("POST", "/api/calibration", { action: "origin", sensor: "zz" })).error).toMatch(/unknown sensor/);
     const again = await call("POST", "/api/calibration", { action: "resolve", region: null });      // a solve keeps the chosen origin
     expect([again.origin, Math.abs(poseOf(again, "c").x) < 1e-6]).toEqual(["c", true]);
@@ -342,6 +342,8 @@ describe("calibration", () => {
     const c = rig.sensors.find((e: any) => e.name === "c");
     expect(["x", "y", "yaw"].map(k => Math.abs(c.pose[k]) < 1e-3)).toEqual([true, true, true]);
     expect(rig.sensors.every((e: any) => e.region?.length === 4)).toBe(true);
+    expect(c.floor).toBeTruthy();                                           // the calibration kept each sensor's own floor fit…
+    expect([c.pose.pitch, c.pose.roll, c.pose.z]).toEqual([c.floor.pitch, c.floor.roll, c.floor.height]);   // …and the new origin stands on it, tilt and all
     expect((await call("GET", "/api/rig?recording=calib")).sensors.find((e: any) => e.name === "c").pose).toEqual(c.pose);
     expect((await call("POST", "/api/rig/origin?recording=calib", { sensor: "zz" })).error).toMatch(/no pose/);
   });

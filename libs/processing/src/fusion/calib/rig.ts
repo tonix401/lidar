@@ -103,6 +103,7 @@ export function rigEntry(c: SensorCalibration, when = new Date()): Record<string
     pose: { x: round(p.x, 4), y: round(p.y, 4), z: round(p.z, 4), yaw: round(p.yaw, 3), pitch: round(p.pitch, 3), roll: round(p.roll, 3) },
     time_offset_s: round(c.timeOffset, 4),
     calibrated: when.toISOString().slice(0, 19),
+    ...(c.floor ? { floor: { pitch: round(c.floor.pitch, 3), roll: round(c.floor.roll, 3), height: round(c.floor.height, 4) } } : {}),
     quality: { floor_rms_mm: c.floor ? round(c.floor.rms * 1000, 1) : null, walk_rms_cm: c.walk ? round(c.walk.rms * 100, 1) : null,
                icp_median_mm: c.icp && isFinite(c.icp.median) ? round(c.icp.median * 1000, 1) : null,
                overlap: c.icp ? round(c.icp.overlap, 3) : null, degenerate: c.icp?.degenerate ?? [], problems: c.problems },

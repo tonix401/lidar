@@ -1,6 +1,6 @@
 // Moving the world's origin to another sensor: a rigid change that leaves the sensors' places relative to each other.
 import { describe, expect, it } from "vitest";
-import { levelledFrame, moveOrigin, moveRegion, moveRigOrigin } from "../src/fusion/calib/origin";
+import { levelledFrame, moveOrigin, moveRegion, moveRigOrigin, worldChange } from "../src/fusion/calib/origin";
 import { pointInPolygon, type Region } from "../src/fusion/calib/region";
 import { apply, compose, fromParams, invert, poseError, toParams } from "../src/fusion/pose";
 import { RIG3 } from "../sim/rig";
@@ -40,10 +40,35 @@ describe("moveOrigin", () => {
   });
 });
 
+describe("the new origin's own floor", () => {
+  const own = (i: number) => { const p = toParams(poses[i]); return { pitch: p.pitch, roll: p.roll, height: p.z }; };
+
+  it("stands the sensor at its own floor's level pose, whatever tilt the old world gave it", () => {
+    const floor = { pitch: 0.4, roll: -0.2, height: 1.1 };                       // not what the old world has for it
+    const m = moveOrigin(poses, 1, floor).map(toParams)[1];
+    expect([m.x, m.y, m.yaw].map(v => Math.abs(v) < 1e-9)).toEqual([true, true, true]);
+    expect([m.z, m.pitch, m.roll].map(v => +v.toFixed(6))).toEqual([1.1, 0.4, -0.2]);
+  });
+
+  it("keeps the others' places relative to it, and so the world turns with the floor", () => {
+    const floor = { pitch: 0.4, roll: -0.2, height: 1.1 }, m = moveOrigin(poses, 1, floor);
+    for (const [i, j] of [[0, 1], [1, 2], [0, 2]]) {
+      const e = poseError(compose(invert(poses[i]), poses[j]), compose(invert(m[i]), m[j]));
+      expect(e.dist).toBeLessThan(1e-9);
+      expect(e.angle).toBeLessThan(1e-4);
+    }
+    expect(toParams(m[0]).pitch).not.toBeCloseTo(toParams(moveOrigin(poses, 1)[0]).pitch, 1);   // not the old up any more
+  });
+
+  it("a floor that matches the old world's tilt gives the same as not knowing it", () => {
+    const a = moveOrigin(poses, 2, own(2)), b = moveOrigin(poses, 2);
+    a.forEach((p, i) => { const e = poseError(p, b[i]); expect(e.dist).toBeLessThan(1e-6); expect(e.angle).toBeLessThan(1e-3); });
+  });
+});
+
 describe("a region follows the world", () => {
   it("covers the same things after the move", () => {
-    const region: Region = [[-1, -2], [6, -2], [6, 4], [-1, 4]], from = poses[1], moved = moveRegion(region, from);
-    const inv = invert(levelledFrame(from));
+    const region: Region = [[-1, -2], [6, -2], [6, 4], [-1, 4]], inv = worldChange(poses[1]), moved = moveRegion(region, inv);
     for (const p of [[0, 0, 0], [3, 1, 0], [5.5, 3.5, 0], [-2, 0, 0], [7, 1, 0], [3, 5, 0]]) {
       const q = apply(inv, p);
       expect(pointInPolygon(q[0], q[1], moved), String(p)).toBe(pointInPolygon(p[0], p[1], region));
@@ -63,6 +88,11 @@ describe("moveRigOrigin", () => {
     expect(out[2].region).toHaveLength(3);
     const e = poseError(compose(invert(fromParams(out[0].pose)), fromParams(out[2].pose)), compose(invert(poses[0]), poses[2]));
     expect(e.dist).toBeLessThan(2e-4);                                   // rounding of the stored form only
+  });
+
+  it("uses the sensor's stored own floor", () => {
+    const withFloor = sensors.map((s, i) => (i === 1 ? { ...s, floor: { pitch: 0.4, roll: -0.2, height: 1.1 } } : s));
+    expect(moveRigOrigin(withFloor, "b")[1].pose).toEqual({ x: 0, y: 0, z: 1.1, yaw: 0, pitch: 0.4, roll: -0.2 });
   });
 
   it("refuses a sensor without a pose", () => {

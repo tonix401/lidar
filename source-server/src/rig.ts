@@ -7,7 +7,7 @@ import { POSE_KEYS, type Pose, type Rig, type RigSensor } from "@mrs6000/wire/ri
 
 export { rigFor, type Rig, type RigSensor } from "@mrs6000/wire/rig";
 
-const SENSOR_KEYS = ["pose", "time_offset_s", "calibrated", "quality", "region"] as const;   // what a PUT may change
+const SENSOR_KEYS = ["pose", "time_offset_s", "calibrated", "quality", "region", "floor"] as const;   // what a PUT may change
 
 export interface SensorSpec { name: string; ip: string }
 
@@ -31,6 +31,13 @@ export function checkPose(pose: unknown): Pose {
   return out;
 }
 
+function checkFloor(f: unknown) {
+  const o = f as Record<string, unknown>;
+  if (!o || typeof o !== "object" || Object.keys(o).sort().join() !== "height,pitch,roll") throw new ValueError("floor needs exactly pitch, roll, height");
+  for (const k of ["pitch", "roll", "height"]) if (typeof o[k] !== "number" || !Number.isFinite(o[k] as number) || Math.abs(o[k] as number) > 100) throw new ValueError(`floor ${k}: expected a number`);
+  return { pitch: o.pitch as number, roll: o.roll as number, height: o.height as number };
+}
+
 function checkRegionOf(region: unknown) {
   try { return checkRegion(region); } catch (e) { throw new ValueError(`region: ${e instanceof Error ? e.message : e}`); }
 }
@@ -45,7 +52,8 @@ export function mergeRig(rig: Rig, update: unknown): Rig {
     const s = sensors.get(name) ?? { name };
     sensors.set(name, s);
     for (const k of SENSOR_KEYS) if (k in u) {
-      if (k === "region") { if (u[k] === null) delete s.region; else s.region = checkRegionOf(u[k]); }   // null: no region
+      if (k === "floor") { if (u[k] === null) delete s.floor; else s.floor = checkFloor(u[k]); }
+      else if (k === "region") { if (u[k] === null) delete s.region; else s.region = checkRegionOf(u[k]); }   // null: no region
       else (s as Record<string, unknown>)[k] = k === "pose" ? checkPose(u[k]) : u[k];
     }
   }
